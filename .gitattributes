@@ -1,0 +1,13 @@
+# Force LF everywhere so listings, hashes, and diffs match on Windows and Linux.
+* text=auto eol=lf
+*.py text eol=lf
+*.md text eol=lf
+*.sql text eol=lf
+*.csv text eol=lf
+*.json text eol=lf
+*.toml text eol=lf
+*.png binary
+*.xlsx binary
+*.db binary
+# cmd.exe needs CRLF in batch files
+*.cmd text eol=crlf

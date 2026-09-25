@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "almetrics"
+version = "1.0.0"
+description = "Measure an Ignition alarm journal before you fix it: ISA-18.2 metrics, bad actors, MADB export."
+readme = "README.md"
+license = "MIT"
+authors = [{ name = "Charles Vance" }]
+requires-python = ">=3.12"
+dependencies = ["openpyxl>=3.1", "matplotlib>=3.9"]
+classifiers = [
+    "Programming Language :: Python :: 3.14",
+    "Operating System :: Microsoft :: Windows",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
+
+[project.scripts]
+almetrics = "almetrics.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,171 @@
+"""Grayscale charts sized for a 4.25 in square figure at 300 dpi.
+
+Every figure in the book that shows data is drawn by these functions, so
+anyone who runs the repo gets the same pictures from the same numbers.
+"""
+from __future__ import annotations
+
+from datetime import datetime, timedelta
+from pathlib import Path
+
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.dates as mdates  # noqa: E402
+import matplotlib.pyplot as plt  # noqa: E402
+
+from .episodes import ParsedJournal  # noqa: E402
+from .metrics import daily_counts  # noqa: E402
+
+SIZE = (4.25, 4.25)
+DPI = 300
+INK = ["#000000", "#7f7f7f", "#bfbfbf", "#404040"]
+DASH = ["-", "--", ":", "-."]
+
+
+def style() -> None:
+    plt.rcParams.update({
+        "font.family": "DejaVu Sans", "font.size": 8, "axes.titlesize": 9,
+        "axes.labelsize": 8, "xtick.labelsize": 7, "ytick.labelsize": 7,
+        "legend.fontsize": 7, "axes.edgecolor": "#000000", "axes.linewidth": 0.8,
+        "lines.linewidth": 1.0, "savefig.facecolor": "white",
+        "axes.facecolor": "white", "figure.facecolor": "white",
+        "axes.spines.top": False, "axes.spines.right": False,
+    })
+
+
+def _save(fig, path) -> Path:
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fig.tight_layout()
+    fig.savefig(path, dpi=DPI)
+    plt.close(fig)
+    return path
+
+
+# listing: chart_daily_rate
+def daily_rate(pj: ParsedJournal, path, consoles: list[str] | None = None,
+               title: str = "Annunciated alarms per console per day") -> Path:
+    """One panel per console: daily bars against the 1 and 2 per 10 min lines."""
+    style()
+    consoles = consoles or pj.consoles()
+    days = int(round(pj.days))
+    day0 = datetime(pj.start.year, pj.start.month, pj.start.day)
+    x = [day0 + timedelta(days=i) for i in range(days)]
+    series = {c: daily_counts([e.active for e in pj.annunciated() if e.console == c],
+                              pj.start, days) for c in consoles}
+    top = max(max(y) for y in series.values()) * 1.1
+    fig, axes = plt.subplots(len(consoles), 1, figsize=SIZE, sharex=True, squeeze=False)
+    for ax, c in zip(axes[:, 0], consoles):
+        ax.bar(x, series[c], width=1.0, color="#7f7f7f", edgecolor="none")
+        for level, text in ((144, "1 per 10 min"), (288, "2 per 10 min")):
+            ax.axhline(level, color="#000000", lw=0.7, ls="--")
+            ax.text(x[0], level, f" {text} ({level}/day)", ha="left", va="bottom",
+                    fontsize=6.5, bbox=dict(fc="white", ec="none", pad=0.5))
+        ax.set_ylim(0, top)
+        ax.set_ylabel(f"Console {c}\nalarms per day")
+    axes[0, 0].set_title(title)
+    axes[-1, 0].xaxis.set_major_locator(mdates.MonthLocator())
+    axes[-1, 0].xaxis.set_major_formatter(mdates.DateFormatter("%b"))
+    return _save(fig, path)
+# end listing
+
+
+# listing: chart_flood_minutes
+def flood_minutes(pj: ParsedJournal, t0: datetime, minutes: int, path,
+                  consoles: list[str] | None = None, begin: int = 10,
+                  title: str = "Alarm arrivals during an upset") -> Path:
+    """Top: arrivals per minute by console. Bottom: rolling 10-min count."""
+    style()
+    consoles = consoles or pj.consoles()
+    fig, (top, bot) = plt.subplots(2, 1, figsize=SIZE, sharex=True,
+                                   gridspec_kw={"height_ratios": [1, 1]})
+    xs = list(range(minutes))
+    base = [0] * minutes
+    totals = [0] * minutes
+    for i, c in enumerate(consoles):
+        per = [0] * minutes
+        for e in pj.annunciated():
+            if e.console == c and t0 <= e.active < t0 + timedelta(minutes=minutes):
+                per[int((e.active - t0).total_seconds() // 60)] += 1
+        top.bar(xs, per, bottom=base, width=0.9, color=INK[i % 3],
+                edgecolor="#000000", lw=0.3, label=f"Console {c}")
+        base = [b + p for b, p in zip(base, per)]
+        totals = [t + p for t, p in zip(totals, per)]
+    top.set_ylabel("Alarms per minute")
+    top.legend(loc="upper right", frameon=False)
+    top.set_title(title)
+    rolling = [sum(totals[max(0, i - 9): i + 1]) for i in xs]
+    bot.plot(xs, rolling, color="#000000", lw=1.0)
+    bot.axhline(begin, color="#000000", lw=0.6, ls="--")
+    bot.text(minutes - 1, begin, f"flood threshold ({begin})", ha="right", va="bottom",
+             fontsize=6.5)
+    bot.set_ylabel("Alarms in last 10 min")
+    bot.set_xlabel(f"Minutes after {t0:%H:%M} on {t0:%d %b %Y}")
+    return _save(fig, path)
+# end listing
+
+
+def ten_minute_histogram(counts: list[int], path, title="Alarms per 10-minute period") -> Path:
+    style()
+    fig, ax = plt.subplots(figsize=SIZE)
+    edges = [0, 1, 2, 3, 5, 10, 20, 50, 100, 1000]
+    labels = ["0", "1", "2", "3-4", "5-9", "10-19", "20-49", "50-99", "100+"]
+    bins = [0] * (len(edges) - 1)
+    for c in counts:
+        for i in range(len(edges) - 1):
+            if edges[i] <= c < edges[i + 1]:
+                bins[i] += 1
+                break
+    total = sum(bins) or 1
+    pct = [100 * b / total for b in bins]
+    ax.bar(labels, pct, color=["#bfbfbf"] * 5 + ["#000000"] * 4, edgecolor="#000000", lw=0.4)
+    ax.set_ylabel("Percent of 10-minute periods")
+    ax.set_xlabel("Alarms in the period")
+    ax.set_title(title)
+    return _save(fig, path)
+
+
+def pareto(actors, path, title="Top ten alarms by count") -> Path:
+    style()
+    fig, ax = plt.subplots(figsize=SIZE)
+    names = [f"{a.rank}" for a in actors]
+    ax.bar(names, [a.pct for a in actors], color="#7f7f7f", edgecolor="#000000", lw=0.4)
+    ax2 = ax.twinx()
+    ax2.plot(names, [a.cum_pct for a in actors], color="#000000", marker="o", ms=3)
+    ax2.set_ylim(0, 100)
+    ax2.set_ylabel("Cumulative percent")
+    ax2.spines["right"].set_visible(True)
+    ax.set_ylabel("Percent of all annunciated alarms")
+    ax.set_xlabel("Rank (see table)")
+    ax.set_title(title)
+    return _save(fig, path)
+
+
+def priority_mix(mix: dict[str, float], path, target=(80, 15, 5),
+                 title="Annunciated priority mix") -> Path:
+    style()
+    fig, ax = plt.subplots(figsize=SIZE)
+    cats = ["Low", "Medium", "High"]
+    xs = range(3)
+    ax.bar([x - 0.2 for x in xs], [mix.get(c, 0) for c in cats], 0.4, color="#000000",
+           label="Measured")
+    ax.bar([x + 0.2 for x in xs], target, 0.4, color="white", edgecolor="#000000",
+           hatch="////", label="Target")
+    ax.set_xticks(list(xs), cats)
+    ax.set_ylabel("Percent of annunciated alarms")
+    ax.set_title(title)
+    ax.legend(frameon=False)
+    return _save(fig, path)
+
+
+def before_after(rows: list[dict], path, title="Before and after") -> Path:
+    style()
+    fig, ax = plt.subplots(figsize=SIZE)
+    labels = [r["metric"] for r in rows]
+    ratio = [r["after"] / r["before"] * 100 if r["before"] else 0 for r in rows]
+    ax.barh(labels[::-1], ratio[::-1], color="#7f7f7f", edgecolor="#000000", lw=0.4)
+    ax.axvline(100, color="#000000", lw=0.6, ls="--")
+    ax.set_xlabel("After as percent of before")
+    ax.set_title(title)
+    return _save(fig, path)
