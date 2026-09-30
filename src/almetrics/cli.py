@@ -459,6 +459,35 @@ def cmd_build(args):
 # end listing
 
 
+def cmd_stages(args):
+    from .stages import run_stages
+
+    site = _site(args.site or "redmesa")
+    rows = run_stages(
+        site, datetime.fromisoformat(args.start), args.days, args.seed
+    )
+    print(
+        _table(
+            [
+                [
+                    r["stage"],
+                    f"{r['per_day']:.0f}",
+                    r["peak_10min"],
+                    f"{r['time_in_flood']:.1f}",
+                    f"{r['high_pct']:.1f}",
+                    r["chattering"],
+                ]
+                for r in rows
+            ],
+            ["Stage", "Per day", "Peak 10m", "%Flood", "High %", "Chatter"],
+        )
+    )
+    if args.chart:
+        from .charts import stages_chart
+
+        print(f"chart: {stages_chart(rows, args.chart)}")
+
+
 def cmd_export(args):
     for p in export_csv(args.journal, args.outdir):
         print(p)
@@ -523,6 +552,13 @@ def main(argv: list[str] | None = None) -> int:
     b.add_argument("--root", default=".", help="repo folder to build into")
     b.add_argument("--seed", type=int, default=1843)
     b.set_defaults(fn=cmd_build)
+    st = sub.add_parser("stages", help="apply fixes one kind at a time")
+    st.add_argument("--site", default="redmesa")
+    st.add_argument("--start", default="2026-01-01")
+    st.add_argument("--days", type=int, default=181)
+    st.add_argument("--seed", type=int, default=1843)
+    st.add_argument("--chart", type=Path)
+    st.set_defaults(fn=cmd_stages)
     p = sub.add_parser("export-csv", help="dump both journal tables to CSV")
     p.add_argument("journal", type=Path)
     p.add_argument("outdir", type=Path)

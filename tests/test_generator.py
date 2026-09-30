@@ -81,3 +81,28 @@ def test_real_ignition_shapes(pair):
     assert (
         sum(1 for e in ev if e.eventtype == ACTIVE and not e.is_system) > 1000
     )
+
+
+def test_stages_improve_monotonically():
+    from almetrics.stages import run_stages
+
+    rows = run_stages(redmesa.build(), datetime(2026, 1, 1), 20, seed=5)
+    per_day = [r["per_day"] for r in rows]
+    assert per_day[0] > per_day[1] > per_day[-1]
+    assert rows[-1]["high_pct"] < rows[0]["high_pct"]
+    assert rows[-1]["chattering"] == 0
+
+
+def test_logic_demo_chart(tmp_path):
+    from almetrics.charts import logic_demo
+
+    site = redmesa.build()
+    src = next(s for s in site.signals if "V-410" in s)
+    assert logic_demo(site, src, tmp_path / "d.png").exists()
+
+
+def test_cascade_chart(tmp_path):
+    from almetrics.charts import cascade
+
+    p = cascade(redmesa.build(), "Expander trip", tmp_path / "c.png")
+    assert p.exists()

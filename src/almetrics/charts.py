@@ -379,3 +379,145 @@ def rows_per_day(
     ax.xaxis.set_major_locator(mdates.MonthLocator())
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%b"))
     return _save(fig, path)
+
+
+def stages_chart(
+    rows: list[dict], path, title: str = "What each kind of fix bought"
+) -> Path:
+    """Bars: alarms per day at each cumulative stage. Line: peak in 10 min."""
+    style()
+    fig, ax = plt.subplots(figsize=SIZE)
+    labels = [r["stage"] for r in rows]
+    xs = range(len(rows))
+    ax.bar(
+        xs,
+        [r["per_day"] for r in rows],
+        color="#7f7f7f",
+        edgecolor="#000000",
+        lw=0.4,
+        label="Alarms per day, plant",
+    )
+    ax.set_ylabel("Annunciated alarms per day, both consoles")
+    ax2 = ax.twinx()
+    ax2.plot(
+        xs,
+        [r["peak_10min"] for r in rows],
+        color="#000000",
+        marker="o",
+        ms=3,
+        label="Peak in 10 min, worst console",
+    )
+    ax2.set_ylabel("Peak alarms in 10 minutes")
+    ax2.spines["right"].set_visible(True)
+    ax2.set_ylim(0, max(r["peak_10min"] for r in rows) * 1.15)
+    ax.set_xticks(list(xs), labels, rotation=40, ha="right")
+    ax.set_title(title)
+    h1, l1 = ax.get_legend_handles_labels()
+    h2, l2 = ax2.get_legend_handles_labels()
+    ax.legend(h1 + h2, l1 + l2, frameon=False, loc="upper right")
+    return _save(fig, path)
+
+
+# listing: chart_logic_demo
+def logic_demo(
+    site, source: str, path, seed: int = 7, minutes: float = 12.0
+) -> Path:
+    """One chattering window run through the as-found and rationalized
+    alarm logic: the same PV, two configurations, two activation counts."""
+    import random
+
+    from .generator import ALL_FIXES, _chatter_window
+
+    style()
+    a = site.by_source()[source]
+    sig = site.signals[source]
+    runs = {}
+    for label, fixes in (
+        ("As found", set()),
+        ("Rationalized", set(ALL_FIXES)),
+    ):
+        rng = random.Random(seed)  # same noise for both runs
+        runs[label] = _chatter_window(rng, a, sig, 0.0, minutes, fixes)
+    rng = random.Random(seed)
+    from .generator import _ar1
+    import math
+
+    n = int(minutes * 60)
+    noise = _ar1(rng, n, sig["sigma"])
+    sign = 1 if a.name.startswith("H") else -1
+    pv = [
+        a.setpoint
+        + sign * sig["sigma"] * 1.2 * math.sin(math.pi * i / n)
+        - sign * 0.3 * sig["sigma"]
+        + e
+        for i, e in enumerate(noise)
+    ]
+    fig, (top, mid, bot) = plt.subplots(
+        3,
+        1,
+        figsize=SIZE,
+        sharex=True,
+        gridspec_kw={"height_ratios": [2.2, 1, 1]},
+    )
+    t = [i / 60 for i in range(n)]
+    top.plot(t, pv, color="#000000", lw=0.6)
+    top.axhline(a.setpoint, color="#000000", lw=0.8, ls="--")
+    db = a.rat.deadband
+    top.axhspan(a.setpoint - db, a.setpoint, color="#d9d9d9", lw=0)
+    top.set_ylabel(f"{a.units}")
+    top.set_title(f"{a.displaypath}: one window, two configurations")
+    top.text(
+        t[-1], a.setpoint, " setpoint", fontsize=6.5, va="bottom", ha="right"
+    )
+    for ax, (label, acts) in zip((mid, bot), runs.items()):
+        for x in acts:
+            ax.axvspan(x.t_on / 60, (x.t_off or n) / 60, color="#000000", lw=0)
+        ax.set_yticks([])
+        ax.set_ylabel(
+            f"{label}\n{len(acts)} alarms",
+            rotation=0,
+            ha="right",
+            va="center",
+            fontsize=7,
+        )
+    bot.set_xlabel("Minutes")
+    return _save(fig, path)
+
+
+# end listing
+
+
+def cascade(site, upset_name: str, path, title: str | None = None) -> Path:
+    """Each cascade step of one upset as its window after the trip.
+
+    Hatched bars are the steps rationalization later suppresses by state.
+    """
+    style()
+    up = next(u for u in site.upsets if u.name == upset_name)
+    by = site.by_source()
+    steps = sorted(up.cascade, key=lambda s: s.min_s)
+    fig, ax = plt.subplots(figsize=SIZE)
+    for i, st in enumerate(reversed(steps)):
+        a = by[st.alarm]
+        sup = up.state in a.rat.suppress_in
+        ax.barh(
+            i,
+            (st.max_s - st.min_s) / 60,
+            left=st.min_s / 60,
+            color="white" if sup else "#7f7f7f",
+            edgecolor="#000000",
+            hatch="////" if sup else "",
+            lw=0.5,
+        )
+        label = a.displaypath + ("" if st.p >= 1 else f" (p {st.p:.1f})")
+        ax.text(-0.3, i, label, ha="right", va="center", fontsize=5.5)
+    ax.set_yticks([])
+    ax.set_xlim(0, max(s.max_s for s in steps) / 60 * 1.05)
+    ax.set_xlabel(f"Minutes after {by[up.initiator].displaypath}")
+    ax.set_title(title or f"{upset_name}: the modeled cascade")
+    fig.subplots_adjust(left=0.45)
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(path, dpi=DPI)
+    plt.close(fig)
+    return path

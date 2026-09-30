@@ -180,87 +180,86 @@ def generate(
     )  # (time, alarm, ENABLED/DISABLED)
     planted = {"upsets": [], "chatter_windows": 0, "fleeting_spikes": 0}
 
-    # 1. genuine excursions on every live alarm
+    # Every random draw below happens whatever fixes are applied, so the
+    # process conditions (when excursions, windows, spikes, stale spans,
+    # and upsets occur) are identical at every stage. Fixes decide only
+    # what becomes an alarm. Toggle times use their own stream for the
+    # same reason.
+    toggle_rng = random.Random(seed + 1)
+
+    # 1. genuine excursions on every alarm
     for a in site.alarms:
-        rate = (
-            a.rat.rate
-            if ("setpoint" in fixes and a.rat.rate is not None)
-            else a.rate
-        )
-        if a.source not in live or rate <= 0:
+        if a.rate <= 0:
             continue
-        n = _poisson(rng, rate * days)
-        for _ in range(n):
+        keep_ratio = 1.0
+        if "setpoint" in fixes and a.rat.rate is not None:
+            keep_ratio = a.rat.rate / a.rate
+        n = _poisson(rng, a.rate * days)
+        db, on_d, off_d = _cfg(a, fixes)
+        for i in range(n):
             t = rng.uniform(0, horizon)
             dur = rng.lognormvariate(math.log(240), 1.0)
-            db, on_d, off_d = _cfg(a, fixes)
-            if dur <= on_d:
-                continue
-            acts[a.source].append(
-                Activation(
-                    a, t + on_d, t + dur + off_d, _excursion_value(rng, a)
+            value = _excursion_value(rng, a)
+            # moving a setpoint out of the normal swing thins excursions
+            kept = int((i + 1) * keep_ratio) > int(i * keep_ratio)
+            ok = a.source in live and kept and dur > on_d
+            if ok:
+                acts[a.source].append(
+                    Activation(a, t + on_d, t + dur + off_d, value)
                 )
-            )
             # with no deadband, the return through setpoint rattles
-            if db == 0 and rng.random() < 0.12:
+            if rng.random() < 0.12:
                 tt = t + dur
                 for _ in range(rng.randint(1, 2)):
                     tt += rng.uniform(3, 25)
-                    acts[a.source].append(
-                        Activation(
-                            a,
-                            tt,
-                            tt + rng.uniform(1, 12),
-                            _excursion_value(rng, a),
-                        )
+                    rattle = Activation(
+                        a,
+                        tt,
+                        tt + rng.uniform(1, 12),
+                        _excursion_value(rng, a),
                     )
+                    if ok and db == 0:
+                        acts[a.source].append(rattle)
                     tt += 12
 
     # 2. chattering and fleeting signals
     for src, sig in site.signals.items():
         a = by_src[src]
-        if src not in live:
-            continue
         if "sigma" in sig:
             for _ in range(_poisson(rng, sig["windows"] * days)):
                 t = rng.uniform(0, horizon)
                 mins = rng.uniform(*sig["minutes"])
-                acts[src].extend(_chatter_window(rng, a, sig, t, mins, fixes))
-                planted["chatter_windows"] += 1
+                window = _chatter_window(rng, a, sig, t, mins, fixes)
+                if src in live:
+                    acts[src].extend(window)
+                    planted["chatter_windows"] += 1
         else:
             db, on_d, off_d = _cfg(a, fixes)
             for _ in range(_poisson(rng, sig["spikes"] * days)):
                 t = rng.uniform(0, horizon)
                 dur = rng.expovariate(1 / sig["mean_s"])
+                value = _excursion_value(rng, a)
                 planted["fleeting_spikes"] += 1
-                if dur > on_d:
+                if src in live and dur > on_d:
                     acts[src].append(
-                        Activation(
-                            a,
-                            t + on_d,
-                            t + dur + off_d,
-                            _excursion_value(rng, a),
-                        )
+                        Activation(a, t + on_d, t + dur + off_d, value)
                     )
 
     # 3. stale conditions: out-of-service equipment, failed analyzers
-    if "stale" not in fixes:
-        for src, spans in site.stale_periods.items():
-            if src not in live:
+    for src, spans in site.stale_periods.items():
+        a = by_src[src]
+        for d0, d1 in spans:
+            t_on, t_off = d0 * 86400.0, d1 * 86400.0
+            if t_on >= horizon:
                 continue
-            a = by_src[src]
-            for d0, d1 in spans:
-                t_on, t_off = d0 * 86400.0, d1 * 86400.0
-                if t_on >= horizon:
-                    continue
-                acts[src].append(
-                    Activation(
-                        a,
-                        t_on + rng.uniform(0, 600),
-                        None if t_off >= horizon else t_off,
-                        _excursion_value(rng, a),
-                    )
-                )
+            act = Activation(
+                a,
+                t_on + rng.uniform(0, 600),
+                None if t_off >= horizon else t_off,
+                _excursion_value(rng, a),
+            )
+            if "stale" not in fixes and src in live:
+                acts[src].append(act)
 
     # 4. plant upsets and their cascades
     starts = []
@@ -281,31 +280,34 @@ def generate(
         )
         for step in up.cascade:
             a = by_src[step.alarm]
-            if a.source not in live or rng.random() > step.p:
-                continue
-            if "state" in fixes and up.state in a.rat.suppress_in:
-                toggles.append((t0 + rng.uniform(0.2, 1.5), a, DISABLED))
-                toggles.append((t0 + dur + rng.uniform(1, 30), a, ENABLED))
+            if rng.random() > step.p:
                 continue
             t = t0 + rng.uniform(step.min_s, step.max_s)
             if a.behavior == "chatter" and a.source in site.signals:
-                for act in _chatter_window(
+                new = _chatter_window(
                     rng,
                     a,
                     site.signals[a.source],
                     t,
                     rng.uniform(6, 15),
                     fixes,
-                ):
-                    act.in_upset = True
-                    acts[a.source].append(act)
+                )
             else:
                 off = t + rng.uniform(0.3, 1.0) * max(dur - (t - t0), 300)
-                acts[a.source].append(
-                    Activation(
-                        a, t, off, _excursion_value(rng, a), in_upset=True
-                    )
+                new = [Activation(a, t, off, _excursion_value(rng, a))]
+            if a.source not in live:
+                continue
+            if "state" in fixes and up.state in a.rat.suppress_in:
+                toggles.append(
+                    (t0 + toggle_rng.uniform(0.2, 1.5), a, DISABLED)
                 )
+                toggles.append(
+                    (t0 + dur + toggle_rng.uniform(1, 30), a, ENABLED)
+                )
+                continue
+            for act in new:
+                act.in_upset = True
+                acts[a.source].append(act)
 
     # 5. merge overlaps per alarm, then shelving by the operators
     for src, lst in acts.items():
