@@ -27,8 +27,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from .journal import (ACK, ACTIVE, CLEAR, DISABLED, ENABLED, FLAG_ACKED,
-                      FLAG_CLEARED, FLAG_ENABLED, FLAG_SHELVED, FLAG_SYSTEM,
-                      JournalWriter)
+                      FLAG_CLEARED, FLAG_ENABLED, FLAG_SHELVED, FLAG_SYS_ACK,
+                      FLAG_SYSTEM, JournalWriter)
 from .site import AlarmDef, Site
 
 ALL_FIXES = ("deadband", "setpoint", "priority", "remove", "state", "stale")
@@ -247,7 +247,7 @@ def generate(site: Site, db_path: str | Path, start: datetime, days: int,
         if by_src[src].behavior == "chatter":
             _shelve(rng, merged, 0.01 if "deadband" in fixes else 0.06)
 
-    summary = _write(site, db_path, start, horizon, acts, toggles, fixes, rng)
+    summary = _write(site, db_path, start, horizon, acts, toggles, fixes, rng, live)
     summary.update(planted)
     return summary
 # end listing
@@ -283,7 +283,17 @@ def _uuid(rng: random.Random) -> str:
     return str(uuid.UUID(int=rng.getrandbits(128), version=4))
 
 
-def _write(site, db_path, start, horizon, acts, toggles, fixes, rng) -> dict:
+def seed_restart(rng: random.Random) -> int:
+    """A seed for restart artifacts that leaves the main stream untouched."""
+    return rng.getstate()[1][0]
+
+
+def _active_at(lst: list[Activation], t: float) -> bool:
+    return any(x.t_on <= t and (x.t_off is None or x.t_off > t) for x in lst)
+
+
+def _write(site, db_path, start, horizon, acts, toggles, fixes, rng, live=None) -> dict:
+    live = live if live is not None else {a.source for a in site.alarms}
     rows = []   # (t, order, kind, payload)
     for src, lst in acts.items():
         for x in lst:
@@ -322,11 +332,23 @@ def _write(site, db_path, start, horizon, acts, toggles, fixes, rng) -> dict:
         if t < horizon:
             pri = a.rat.priority if ("priority" in fixes and a.rat.priority is not None) else a.priority
             out_rows.append((t, _uuid(rng), a, pri, kind, FLAG_ENABLED, {}))
-    # two gateway restarts in the window, as a real journal would show
+    # listing: restart_rows
+    # two gateway restarts in the window, as a real journal would show them:
+    # shutdown and startup system rows, then a clear row flagged system-ack,
+    # acked, and cleared (28) for every alarm that is not active at startup.
+    # These clears have no active row: the parser counts them as orphans.
+    rr = random.Random(seed_restart(rng))
     for _ in range(2):
         t = rng.uniform(0, horizon - 600)
-        for tt, name in ((t, "System Shutdown"), (t + rng.uniform(90, 240), "System Startup")):
-            out_rows.append((tt, _uuid(rng), name, 0, ACTIVE, FLAG_SYSTEM, {}))
+        up = t + rng.uniform(90, 240)
+        out_rows.append((t, _uuid(rng), "System Shutdown", 0, ACTIVE, FLAG_SYSTEM, {}))
+        out_rows.append((up, _uuid(rng), "System Startup", 0, ACTIVE, FLAG_SYSTEM, {}))
+        for a in site.alarms:
+            if a.source in live and not _active_at(acts.get(a.source, []), up):
+                pri = a.rat.priority if ("priority" in fixes and a.rat.priority is not None) else a.priority
+                out_rows.append((up + rr.uniform(0.5, 5), _uuid(rr), a, pri, CLEAR,
+                                 FLAG_SYS_ACK | FLAG_ACKED | FLAG_CLEARED, {}))
+    # end listing
 
     out_rows.sort(key=lambda r: (r[0], r[4]))
     for t, eid, a, pri, etype, flags, props in out_rows:

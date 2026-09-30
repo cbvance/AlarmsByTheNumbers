@@ -52,7 +52,8 @@ def test_as_found_is_bad_on_purpose(pair):
     assert m["top10_pct"] > 60
     assert m["pct_time_in_flood"] > 1
     assert len(find_chattering(before.annunciated())) >= 5
-    assert before.system and not before.orphans
+    assert len(before.system) == 4          # two shutdowns, two startups
+    assert before.orphans > 100             # startup clears with no active row
 
 
 def test_fixes_improve_every_headline(pair):
