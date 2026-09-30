@@ -28,3 +28,12 @@ def test_parse_time_shapes():
                  "2026-01-02 03:04:05+00:00"):
         assert parse_time(text) == want
     assert parse_time("2026-01-02 03:04:05.123").microsecond == 123000
+
+
+def test_missing_journal_is_not_created(tmp_path):
+    import pytest
+
+    missing = tmp_path / "nope.db"
+    with pytest.raises(FileNotFoundError):
+        load_events(missing)
+    assert not missing.exists()

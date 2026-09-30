@@ -115,6 +115,9 @@ def connect_readonly(path: str | Path) -> sqlite3.Connection:
     letter; if the URI form is refused (a UNC path), open it plainly.
     """
     p = os.path.abspath(path)
+    if not os.path.isfile(p):
+        # never let a fallback open create an empty database by mistake
+        raise FileNotFoundError(f"journal not found: {p}")
     try:
         url = urllib.request.pathname2url(p)
         if not url.startswith("//"):

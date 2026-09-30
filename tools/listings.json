@@ -79,8 +79,8 @@
  },
  "load_events": {
   "file": "src/almetrics/journal.py",
-  "start": 128,
-  "end": 153,
+  "start": 131,
+  "end": 156,
   "code": "def load_events(path: str | Path, table: str = \"alarm_events\") -> list[Event]:\n    \"\"\"Load alarm_events rows from a SQLite file or a CSV export.\n\n    Rows come back sorted by time, then id, which is the order the\n    gateway wrote them.\n    \"\"\"\n    path = Path(path)\n    if path.suffix.lower() == \".csv\":\n        rows = _read_csv(path)\n    else:\n        with connect_readonly(path) as con:\n            cur = con.execute(\n                f\"SELECT id, eventid, source, displaypath, priority, eventtype, \"\n                f\"eventflags, eventtime FROM {table}\")\n            rows = [dict(zip((\"id\", \"eventid\", \"source\", \"displaypath\", \"priority\",\n                              \"eventtype\", \"eventflags\", \"eventtime\"), r))\n                    for r in cur]\n    events = [\n        Event(int(r[\"id\"]), str(r[\"eventid\"] or \"\"), str(r[\"source\"] or \"\"),\n              str(r[\"displaypath\"] or \"\"), int(r[\"priority\"] or 0),\n              int(r[\"eventtype\"]), int(r[\"eventflags\"] or 0),\n              parse_time(str(r[\"eventtime\"])))\n        for r in rows\n    ]\n    events.sort(key=lambda e: (e.eventtime, e.id))\n    return events"
  },
  "export_madb": {
