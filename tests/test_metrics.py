@@ -73,3 +73,17 @@ def test_by_month_splits_and_sums(builder):
     rows = by_month(pj)
     assert [r["month"] for r in rows] == ["2026-01", "2026-02", "2026-03"]
     assert [r["annunciated"] for r in rows] == [2, 2, 1]
+
+
+def test_flood_kinds(builder):
+    from almetrics.floods import classify
+
+    for i in range(15):  # one alarm, 15 times
+        builder.cycle(f"c{i}", SRC, 60 + i * 20, 61 + i * 20)
+    for i in range(12):  # twelve different alarms
+        src = SRC.replace("LIT-4101", f"LIT-{i:04d}")
+        builder.cycle(f"u{i}", src, 7200 + i * 20, 7300)
+    builder.cycle("end", SRC2, 20000, 20001)
+    pj = parse_journal(builder.events())
+    kinds = [classify(f) for f in floods_for(pj)]
+    assert kinds == ["single alarm", "upset"]

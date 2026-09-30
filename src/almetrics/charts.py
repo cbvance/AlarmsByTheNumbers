@@ -700,3 +700,69 @@ def hour_of_day(
     ax.set_title(title)
     ax.legend(frameon=False)
     return _save(fig, path)
+
+
+def flood_sizes(floods, path, title: str = "Floods by size and kind") -> Path:
+    """Stacked bars: floods by number of alarms, split by kind."""
+    from .floods import classify
+
+    style()
+    edges = [11, 20, 30, 50, 100, 10**9]
+    labels = ["11-19", "20-29", "30-49", "50-99", "100+"]
+    fig, ax = plt.subplots(figsize=SIZE)
+    base = [0] * len(labels)
+    kinds = (
+        ("single alarm", "#bfbfbf"),
+        ("several alarms", "#ffffff"),
+        ("upset + chatter", "#7f7f7f"),
+        ("upset", "#000000"),
+    )
+    for kind, fill in kinds:
+        vals = [
+            sum(
+                1
+                for f in floods
+                if classify(f) == kind and edges[i] <= f.count < edges[i + 1]
+            )
+            for i in range(len(labels))
+        ]
+        n = sum(vals)
+        ax.bar(
+            labels,
+            vals,
+            bottom=base,
+            color=fill,
+            edgecolor="#000000",
+            lw=0.4,
+            label=f"{kind.capitalize()} ({n})",
+        )
+        base = [b + v for b, v in zip(base, vals)]
+    ax.set_xlabel("Alarms in the flood")
+    ax.set_ylabel("Number of floods")
+    ax.set_title(title)
+    ax.legend(frameon=False)
+    return _save(fig, path)
+
+
+def first_outs(
+    floods, path, top: int = 8, title: str = "What starts the floods"
+) -> Path:
+    """Horizontal bars: the most common first alarm of a flood."""
+    from collections import Counter
+
+    style()
+    c = Counter(f.episodes[0].displaypath for f in floods if f.episodes)
+    items = c.most_common(top)[::-1]
+    fig, ax = plt.subplots(figsize=SIZE)
+    ax.barh(
+        [k for k, _ in items],
+        [v for _, v in items],
+        color="#7f7f7f",
+        edgecolor="#000000",
+        lw=0.4,
+    )
+    for i, (_, v) in enumerate(items):
+        ax.text(v + 0.3, i, str(v), va="center", fontsize=6.5)
+    ax.set_xlabel("Floods started")
+    ax.set_title(title)
+    return _save(fig, path)

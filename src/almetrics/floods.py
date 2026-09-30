@@ -121,7 +121,27 @@ def flood_summary(f: Flood, top: int = 5) -> dict:
         "distinct": len(by_src),
         "top": by_src.most_common(top),
         "high_or_critical": sum(1 for e in f.episodes if e.priority >= 3),
+        "kind": classify(f),
     }
+
+
+def classify(f: Flood, share: float = 0.5, many: int = 8) -> str:
+    """Name what drove a flood.
+
+    single alarm     one alarm made at least `share` of it: a nuisance
+                     problem, fixed on that one alarm
+    upset            `many` or more distinct alarms, none dominant: a plant
+                     event, fixed by design (state-based alarming)
+    upset + chatter  an upset padded by one chattering alarm: both fixes
+    several alarms   a few alarms together, none dominant
+    """
+    if not f.episodes:
+        return "empty"
+    by = Counter(e.source for e in f.episodes)
+    dominant = by.most_common(1)[0][1] >= share * len(f.episodes)
+    if len(by) >= many:
+        return "upset + chatter" if dominant else "upset"
+    return "single alarm" if dominant else "several alarms"
 
 
 # end listing

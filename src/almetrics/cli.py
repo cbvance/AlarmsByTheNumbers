@@ -174,15 +174,21 @@ def cmd_metrics(args):
 
 
 def cmd_floods(args):
-    from .floods import flood_summary, floods_for, recurring
+    from collections import Counter
+
+    from .floods import classify, flood_summary, floods_for, recurring
 
     pj, _ = _load(args)
     for c in pj.consoles():
         fl = floods_for(pj, c)
+        kinds = Counter(classify(f) for f in fl)
+        mix = ", ".join(f"{n} {k}" for k, n in kinds.most_common())
         print(f"\nConsole {c}: {len(fl)} floods")
+        print(f"  {mix}")
         big = sorted(fl, key=lambda f: -f.count)[: args.top]
         rows = [
             [
+                s["kind"],
                 f"{s['start']:%Y-%m-%d %H:%M}",
                 s["minutes"],
                 s["alarms"],
@@ -193,7 +199,15 @@ def cmd_floods(args):
         ]
         print(
             _table(
-                rows, ["Start", "Minutes", "Alarms", "Peak 10m", "First out"]
+                rows,
+                [
+                    "Kind",
+                    "Start",
+                    "Minutes",
+                    "Alarms",
+                    "Peak 10m",
+                    "First out",
+                ],
             )
         )
         print("Recurring first-out alarms:")
@@ -392,6 +406,11 @@ def cmd_charts(args):
     made.append(charts.load_by_group(pj, out / "load_by_area.png"))
     made.append(charts.duration_histogram(pj, out / "durations.png"))
     made.append(charts.ack_histogram(pj, out / "time_to_ack.png"))
+    from .floods import floods_for
+
+    fl = [f for c in pj.consoles() for f in floods_for(pj, c)]
+    made.append(charts.flood_sizes(fl, out / "flood_sizes.png"))
+    made.append(charts.first_outs(fl, out / "first_outs.png"))
     raw = load_events(args.journal)
     made.append(
         charts.rows_per_day(
