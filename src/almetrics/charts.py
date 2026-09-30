@@ -521,3 +521,105 @@ def cascade(site, upset_name: str, path, title: str | None = None) -> Path:
     fig.savefig(path, dpi=DPI)
     plt.close(fig)
     return path
+
+
+def _log_hist(ax, values, edges, labels):
+    bins = [0] * (len(edges) - 1)
+    for v in values:
+        for i in range(len(edges) - 1):
+            if edges[i] <= v < edges[i + 1]:
+                bins[i] += 1
+                break
+    total = sum(bins) or 1
+    ax.bar(
+        labels,
+        [100 * b / total for b in bins],
+        color="#7f7f7f",
+        edgecolor="#000000",
+        lw=0.4,
+    )
+    ax.set_ylabel("Percent of episodes")
+
+
+# listing: chart_durations
+def duration_histogram(
+    pj: ParsedJournal, path, title: str = "How long alarms stay active"
+) -> Path:
+    """Time from active to clear, on a log scale of bins."""
+    style()
+    edges = [0, 1, 5, 10, 60, 600, 3600, 86400, 1e12]
+    labels = [
+        "<1 s",
+        "1-5 s",
+        "5-10 s",
+        "10-60 s",
+        "1-10 min",
+        "10-60 min",
+        "1-24 h",
+        ">24 h",
+    ]
+    vals = [e.duration(pj.end) for e in pj.annunciated() if e.clear]
+    fig, ax = plt.subplots(figsize=SIZE)
+    _log_hist(ax, vals, edges, labels)
+    ax.set_xticks(range(len(labels)), labels, rotation=40, ha="right")
+    ax.set_title(title)
+    return _save(fig, path)
+
+
+# end listing
+
+
+def ack_histogram(
+    pj: ParsedJournal, path, title: str = "Time to acknowledge"
+) -> Path:
+    """Time from active to acknowledgement, split by whether the alarm
+    had already cleared when it was acknowledged."""
+    style()
+    edges = [0, 10, 30, 60, 300, 900, 3600, 1e12]
+    labels = [
+        "<10 s",
+        "10-30 s",
+        "30-60 s",
+        "1-5 min",
+        "5-15 min",
+        "15-60 min",
+        ">1 h",
+    ]
+    eps = [e for e in pj.annunciated() if e.ack]
+    fig, ax = plt.subplots(figsize=SIZE)
+    import numpy as np
+
+    xs = np.arange(len(labels))
+    for k, (name, pick, fill) in enumerate(
+        (
+            (
+                "Still active",
+                lambda e: e.clear is None or e.ack <= e.clear,
+                "#000000",
+            ),
+            (
+                "Already cleared",
+                lambda e: e.clear is not None and e.ack > e.clear,
+                "#bfbfbf",
+            ),
+        )
+    ):
+        vals = [e.time_to_ack() for e in eps if pick(e)]
+        bins = [
+            sum(1 for v in vals if edges[i] <= v < edges[i + 1])
+            for i in range(len(labels))
+        ]
+        ax.bar(
+            xs + (k - 0.5) * 0.4,
+            [100 * b / len(eps) for b in bins],
+            0.4,
+            color=fill,
+            edgecolor="#000000",
+            lw=0.4,
+            label=f"{name} ({100 * len(vals) / len(eps):.0f}%)",
+        )
+    ax.set_xticks(xs, labels, rotation=40, ha="right")
+    ax.set_ylabel("Percent of acknowledged episodes")
+    ax.set_title(title)
+    ax.legend(frameon=False)
+    return _save(fig, path)

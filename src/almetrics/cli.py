@@ -360,6 +360,8 @@ def cmd_charts(args):
         )
     )
     made.append(charts.load_by_group(pj, out / "load_by_area.png"))
+    made.append(charts.duration_histogram(pj, out / "durations.png"))
+    made.append(charts.ack_histogram(pj, out / "time_to_ack.png"))
     raw = load_events(args.journal)
     made.append(
         charts.rows_per_day(
