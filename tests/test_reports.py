@@ -12,7 +12,9 @@ def test_bad_actors_ranked(pair):  # noqa: F811
     before, _, _ = pair
     acts = bad_actors(before)
     assert len(acts) == 10
-    assert [a.count for a in acts] == sorted((a.count for a in acts), reverse=True)
+    assert [a.count for a in acts] == sorted(
+        (a.count for a in acts), reverse=True
+    )
     assert acts[0].diagnosis.startswith("chattering")
     assert abs(acts[-1].cum_pct - sum(a.pct for a in acts)) < 1e-9
 
@@ -25,7 +27,9 @@ def test_madb_workbook(pair, tmp_path):  # noqa: F811
     ws = wb["MADB"]
     header = [c.value for c in ws[1]]
     assert "Consequence" in header and "Rationalized Priority" in header
-    assert ws.max_row - 1 == len(redmesa.build().alarms)   # every configured alarm listed
+    assert ws.max_row - 1 == len(
+        redmesa.build().alarms
+    )  # every configured alarm listed
     f = ws.cell(2, header.index("Rationalized Priority") + 1).value
     assert f.startswith("=IF(") and "Matrix!" in f
 

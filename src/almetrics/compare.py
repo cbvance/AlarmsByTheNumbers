@@ -1,4 +1,5 @@
 """Before and after: the report that proves the work paid off."""
+
 from __future__ import annotations
 
 from .episodes import ParsedJournal
@@ -20,22 +21,47 @@ ROWS = [
 
 
 def _extra(pj: ParsedJournal, console: str | None) -> dict:
-    eps = [e for e in pj.annunciated() if console is None or e.console == console]
+    eps = [
+        e for e in pj.annunciated() if console is None or e.console == console
+    ]
     st = stale_summary(stale_by_day(pj, console))
-    return {"chattering": len(find_chattering(eps)), "max_stale": st["max_stale"]}
+    return {
+        "chattering": len(find_chattering(eps)),
+        "max_stale": st["max_stale"],
+    }
 
 
 # listing: compare
-def compare(before: ParsedJournal, after: ParsedJournal, console: str | None = None,
-            targets: Targets = Targets()) -> list[dict]:
-    b = console_metrics(before, console, targets=targets) | _extra(before, console)
-    a = console_metrics(after, console, targets=targets) | _extra(after, console)
-    b["high_pct"], a["high_pct"] = b["priority_mix"]["High"], a["priority_mix"]["High"]
+def compare(
+    before: ParsedJournal,
+    after: ParsedJournal,
+    console: str | None = None,
+    targets: Targets = Targets(),
+) -> list[dict]:
+    b = console_metrics(before, console, targets=targets) | _extra(
+        before, console
+    )
+    a = console_metrics(after, console, targets=targets) | _extra(
+        after, console
+    )
+    b["high_pct"], a["high_pct"] = (
+        b["priority_mix"]["High"],
+        a["priority_mix"]["High"],
+    )
     out = []
     for key, label, target, _ in ROWS:
         bv, av = float(b[key]), float(a[key])
         change = (100.0 * (av - bv) / bv) if bv else 0.0
-        out.append({"metric": label, "before": bv, "after": av,
-                    "change_pct": change, "target": target or ""})
+        out.append(
+            {
+                "metric": label,
+                "before": bv,
+                "after": av,
+                "change_pct": change,
+                "target": target or "",
+            }
+        )
     return out
+
+
 # end listing

@@ -5,6 +5,7 @@ All rates are per operator console, computed from annunciated episodes
 are the ISA-18.2 suggested values as the book cites them in Chapter 4;
 keep them in one place so a site can adopt its own philosophy numbers.
 """
+
 from __future__ import annotations
 
 from collections import Counter
@@ -19,20 +20,28 @@ from .site import PRIORITY_NAMES
 # listing: targets
 @dataclass(frozen=True)
 class Targets:
-    per_10min_acceptable: float = 1.0   # average annunciated alarms per 10 min
+    per_10min_acceptable: float = 1.0  # average annunciated alarms per 10 min
     per_10min_manageable: float = 2.0
-    flood_begin: int = 10               # alarms in 10 min that start a flood
-    flood_end: int = 5                  # below this many in 10 min it ends
-    pct_10min_over: float = 1.0         # percent of 10-min periods above 10
+    flood_begin: int = 10  # alarms in 10 min that start a flood
+    flood_end: int = 5  # below this many in 10 min it ends
+    pct_10min_over: float = 1.0  # percent of 10-min periods above 10
     max_in_10min: int = 10
     pct_time_in_flood: float = 1.0
-    top10_pct_max: float = 5.0          # top ten share of all alarms, percent
-    stale_per_day: int = 5              # alarms active > 24 h, any day
-    priority_mix: tuple[float, float, float] = (80.0, 15.0, 5.0)  # low, med, high
+    top10_pct_max: float = 5.0  # top ten share of all alarms, percent
+    stale_per_day: int = 5  # alarms active > 24 h, any day
+    priority_mix: tuple[float, float, float] = (
+        80.0,
+        15.0,
+        5.0,
+    )  # low, med, high
+
+
 # end listing
 
 
-def ten_minute_counts(times: list[datetime], start: datetime, end: datetime) -> list[int]:
+def ten_minute_counts(
+    times: list[datetime], start: datetime, end: datetime
+) -> list[int]:
     """Counts in fixed 10-minute periods from start (partial last period dropped)."""
     n = int((end - start).total_seconds() // 600)
     counts = [0] * max(n, 0)
@@ -43,7 +52,9 @@ def ten_minute_counts(times: list[datetime], start: datetime, end: datetime) -> 
     return counts
 
 
-def daily_counts(times: list[datetime], start: datetime, days: int) -> list[int]:
+def daily_counts(
+    times: list[datetime], start: datetime, days: int
+) -> list[int]:
     day0 = datetime(start.year, start.month, start.day)
     counts = [0] * days
     for t in times:
@@ -59,15 +70,24 @@ def priority_bucket(p: int) -> str:
 
 
 # listing: console_metrics
-def console_metrics(pj: ParsedJournal, console: str | None = None,
-                    min_priority: int = 1, targets: Targets = Targets()) -> dict:
+def console_metrics(
+    pj: ParsedJournal,
+    console: str | None = None,
+    min_priority: int = 1,
+    targets: Targets = Targets(),
+) -> dict:
     """Headline metrics for one console (or the whole journal if None)."""
-    eps = [e for e in pj.annunciated(min_priority)
-           if console is None or e.console == console]
+    eps = [
+        e
+        for e in pj.annunciated(min_priority)
+        if console is None or e.console == console
+    ]
     times = [e.active for e in eps]
     tens = ten_minute_counts(times, pj.start, pj.end)
     periods = len(tens) or 1
-    floods = find_floods(times, pj.start, pj.end, targets.flood_begin, targets.flood_end)
+    floods = find_floods(
+        times, pj.start, pj.end, targets.flood_begin, targets.flood_end
+    )
     flood_s = sum((f.end - f.start).total_seconds() for f in floods)
     span_s = (pj.end - pj.start).total_seconds()
     by_pri = Counter(e.priority for e in eps)
@@ -75,7 +95,7 @@ def console_metrics(pj: ParsedJournal, console: str | None = None,
     by_src = Counter(e.source for e in eps)
     top10 = sum(n for _, n in by_src.most_common(10))
     total = len(eps)
-    pct = (lambda n: 100.0 * n / total if total else 0.0)
+    pct = lambda n: 100.0 * n / total if total else 0.0
     return {
         "console": console or "ALL",
         "annunciated": total,
@@ -84,20 +104,31 @@ def console_metrics(pj: ParsedJournal, console: str | None = None,
         "per_hour": total / (pj.days * 24) if pj.days else 0.0,
         "per_10min": total / periods,
         "max_10min": max(tens) if tens else 0,
-        "pct_10min_over": 100.0 * sum(1 for c in tens if c > targets.flood_begin) / periods,
+        "pct_10min_over": 100.0
+        * sum(1 for c in tens if c > targets.flood_begin)
+        / periods,
         "floods": len(floods),
         "pct_time_in_flood": 100.0 * flood_s / span_s if span_s else 0.0,
-        "priority_counts": {PRIORITY_NAMES[p]: by_pri.get(p, 0) for p in range(5)},
-        "priority_mix": {k: round(pct(mix.get(k, 0)), 1) for k in ("Low", "Medium", "High")},
+        "priority_counts": {
+            PRIORITY_NAMES[p]: by_pri.get(p, 0) for p in range(5)
+        },
+        "priority_mix": {
+            k: round(pct(mix.get(k, 0)), 1) for k in ("Low", "Medium", "High")
+        },
         "distinct_alarms": len(by_src),
         "top10_pct": pct(top10),
     }
+
+
 # end listing
 
 
-def all_consoles(pj: ParsedJournal, min_priority: int = 1,
-                 targets: Targets = Targets()) -> list[dict]:
-    return [console_metrics(pj, c, min_priority, targets) for c in pj.consoles()]
+def all_consoles(
+    pj: ParsedJournal, min_priority: int = 1, targets: Targets = Targets()
+) -> list[dict]:
+    return [
+        console_metrics(pj, c, min_priority, targets) for c in pj.consoles()
+    ]
 
 
 def verdict(m: dict, t: Targets = Targets()) -> dict[str, bool]:

@@ -1,15 +1,30 @@
 from datetime import datetime
 
-from almetrics.journal import (ACTIVE, FLAG_SYSTEM, JournalWriter, export_csv,
-                               load_event_data, load_events, parse_time)
+from almetrics.journal import (
+    ACTIVE,
+    FLAG_SYSTEM,
+    JournalWriter,
+    export_csv,
+    load_event_data,
+    load_events,
+    parse_time,
+)
 
 
 def test_round_trip_sqlite_and_csv(tmp_path):
     db = tmp_path / "j.db"
     w = JournalWriter(db)
     t = datetime(2026, 3, 1, 12, 0, 0, 250000)
-    w.add("e1", "prov:default:/tag:A:/alm:H", "A H", 3, ACTIVE, 0, t,
-          {"eventValue": 71.5, "ackUser": "usr:nholt", "count": 2})
+    w.add(
+        "e1",
+        "prov:default:/tag:A:/alm:H",
+        "A H",
+        3,
+        ACTIVE,
+        0,
+        t,
+        {"eventValue": 71.5, "ackUser": "usr:nholt", "count": 2},
+    )
     w.add("s1", "System Startup", "System Startup", 0, ACTIVE, FLAG_SYSTEM, t)
     w.close()
     ev = load_events(db)
@@ -24,8 +39,12 @@ def test_round_trip_sqlite_and_csv(tmp_path):
 
 def test_parse_time_shapes():
     want = datetime(2026, 1, 2, 3, 4, 5)
-    for text in ("2026-01-02 03:04:05", "2026-01-02T03:04:05", "01/02/2026 03:04:05",
-                 "2026-01-02 03:04:05+00:00"):
+    for text in (
+        "2026-01-02 03:04:05",
+        "2026-01-02T03:04:05",
+        "01/02/2026 03:04:05",
+        "2026-01-02 03:04:05+00:00",
+    ):
         assert parse_time(text) == want
     assert parse_time("2026-01-02 03:04:05.123").microsecond == 123000
 

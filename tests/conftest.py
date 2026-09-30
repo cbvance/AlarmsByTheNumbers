@@ -1,4 +1,5 @@
 """Shared fixtures: tiny hand-built journals whose answers are known."""
+
 from datetime import datetime, timedelta
 
 import pytest
@@ -16,7 +17,9 @@ class Builder:
     def __init__(self):
         self.rows = []
 
-    def cycle(self, eid, src, on_s, off_s=None, ack_s=None, priority=3, shelved=False):
+    def cycle(
+        self, eid, src, on_s, off_s=None, ack_s=None, priority=3, shelved=False
+    ):
         flags = FLAG_SHELVED if shelved else 0
         self._add(eid, src, priority, ACTIVE, flags, on_s)
         if off_s is not None:
@@ -26,8 +29,18 @@ class Builder:
         return self
 
     def _add(self, eid, src, pri, etype, flags, s):
-        self.rows.append(Event(len(self.rows) + 1, eid, src, src.rsplit("/", 1)[-1], pri,
-                               etype, flags, T0 + timedelta(seconds=s)))
+        self.rows.append(
+            Event(
+                len(self.rows) + 1,
+                eid,
+                src,
+                src.rsplit("/", 1)[-1],
+                pri,
+                etype,
+                flags,
+                T0 + timedelta(seconds=s),
+            )
+        )
 
     def events(self):
         return sorted(self.rows, key=lambda e: (e.eventtime, e.id))

@@ -11,6 +11,7 @@ both are configurable on the journal profile):
 This module reads either a SQLite copy of those tables or CSV exports of
 them, and writes the same layout for the synthetic generator.
 """
+
 from __future__ import annotations
 
 import csv
@@ -28,12 +29,12 @@ from pathlib import Path
 ACTIVE, CLEAR, ACK, ENABLED, DISABLED = 0, 1, 2, 4, 5
 
 # alarm_events.eventflags bits
-FLAG_SYSTEM = 1 << 0     # System Startup / System Shutdown rows
-FLAG_SHELVED = 1 << 1    # alarm was shelved when the event occurred
-FLAG_SYS_ACK = 1 << 2    # acknowledged by the system (live event limit)
-FLAG_ACKED = 1 << 3      # already acknowledged at the time of the event
-FLAG_CLEARED = 1 << 4    # already cleared at the time of the event
-FLAG_ENABLED = 1 << 5    # the alarm's enabled state changed
+FLAG_SYSTEM = 1 << 0  # System Startup / System Shutdown rows
+FLAG_SHELVED = 1 << 1  # alarm was shelved when the event occurred
+FLAG_SYS_ACK = 1 << 2  # acknowledged by the system (live event limit)
+FLAG_ACKED = 1 << 3  # already acknowledged at the time of the event
+FLAG_CLEARED = 1 << 4  # already cleared at the time of the event
+FLAG_ENABLED = 1 << 5  # the alarm's enabled state changed
 
 # alarm_event_data.dtype
 DT_INT, DT_FLOAT, DT_STR = 0, 1, 2
@@ -85,6 +86,8 @@ class Event:
     @property
     def is_shelved(self) -> bool:
         return bool(self.eventflags & FLAG_SHELVED)
+
+
 # end listing
 
 
@@ -93,8 +96,13 @@ def parse_time(text: str) -> datetime:
     text = text.strip().replace("T", " ")
     if "+" in text[19:]:
         text = text[: 19 + text[19:].index("+")]
-    for fmt in ("%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S", "%m/%d/%Y %H:%M:%S",
-                "%m/%d/%Y %I:%M:%S %p", "%m/%d/%Y %H:%M"):
+    for fmt in (
+        "%Y-%m-%d %H:%M:%S.%f",
+        "%Y-%m-%d %H:%M:%S",
+        "%m/%d/%Y %H:%M:%S",
+        "%m/%d/%Y %I:%M:%S %p",
+        "%m/%d/%Y %H:%M",
+    ):
         try:
             return datetime.strptime(text, fmt)
         except ValueError:
@@ -140,20 +148,44 @@ def load_events(path: str | Path, table: str = "alarm_events") -> list[Event]:
     else:
         with connect_readonly(path) as con:
             cur = con.execute(
-                f"SELECT id, eventid, source, displaypath, priority, eventtype, "
-                f"eventflags, eventtime FROM {table}")
-            rows = [dict(zip(("id", "eventid", "source", "displaypath", "priority",
-                              "eventtype", "eventflags", "eventtime"), r))
-                    for r in cur]
+                "SELECT id, eventid, source, displaypath, priority,"
+                f" eventtype, eventflags, eventtime FROM {table}"
+            )
+            rows = [
+                dict(
+                    zip(
+                        (
+                            "id",
+                            "eventid",
+                            "source",
+                            "displaypath",
+                            "priority",
+                            "eventtype",
+                            "eventflags",
+                            "eventtime",
+                        ),
+                        r,
+                    )
+                )
+                for r in cur
+            ]
     events = [
-        Event(int(r["id"]), str(r["eventid"] or ""), str(r["source"] or ""),
-              str(r["displaypath"] or ""), int(r["priority"] or 0),
-              int(r["eventtype"]), int(r["eventflags"] or 0),
-              parse_time(str(r["eventtime"])))
+        Event(
+            int(r["id"]),
+            str(r["eventid"] or ""),
+            str(r["source"] or ""),
+            str(r["displaypath"] or ""),
+            int(r["priority"] or 0),
+            int(r["eventtype"]),
+            int(r["eventflags"] or 0),
+            parse_time(str(r["eventtime"])),
+        )
         for r in rows
     ]
     events.sort(key=lambda e: (e.eventtime, e.id))
     return events
+
+
 # end listing
 
 
@@ -163,12 +195,18 @@ def _read_csv(path: Path) -> list[dict]:
         # exports vary in case and in "display path" vs "displaypath"
         out = []
         for row in reader:
-            norm = {k.strip().lower().replace(" ", ""): v for k, v in row.items() if k}
+            norm = {
+                k.strip().lower().replace(" ", ""): v
+                for k, v in row.items()
+                if k
+            }
             out.append(norm)
         return out
 
 
-def load_event_data(path: str | Path, table: str = "alarm_event_data") -> dict[int, dict]:
+def load_event_data(
+    path: str | Path, table: str = "alarm_event_data"
+) -> dict[int, dict]:
     """Return {event row id: {propname: value}} from SQLite or CSV."""
     path = Path(path)
     if path.suffix.lower() == ".csv":
@@ -176,13 +214,32 @@ def load_event_data(path: str | Path, table: str = "alarm_event_data") -> dict[i
     else:
         with connect_readonly(path) as con:
             cur = con.execute(
-                f"SELECT id, propname, dtype, intvalue, floatvalue, strvalue FROM {table}")
-            rows = [dict(zip(("id", "propname", "dtype", "intvalue", "floatvalue",
-                              "strvalue"), r)) for r in cur]
+                f"SELECT id, propname, dtype, intvalue, floatvalue, strvalue FROM {table}"
+            )
+            rows = [
+                dict(
+                    zip(
+                        (
+                            "id",
+                            "propname",
+                            "dtype",
+                            "intvalue",
+                            "floatvalue",
+                            "strvalue",
+                        ),
+                        r,
+                    )
+                )
+                for r in cur
+            ]
     out: dict[int, dict] = {}
     for r in rows:
         dtype = int(r["dtype"])
-        key = ("intvalue", "floatvalue", "strvalue")[dtype] if dtype in (0, 1, 2) else "strvalue"
+        key = (
+            ("intvalue", "floatvalue", "strvalue")[dtype]
+            if dtype in (0, 1, 2)
+            else "strvalue"
+        )
         val = r[key]
         if val not in (None, "") and dtype == DT_INT:
             val = int(val)
@@ -212,12 +269,31 @@ class JournalWriter:
         self.events: list[tuple] = []
         self.data: list[tuple] = []
 
-    def add(self, eventid: str, source: str, displaypath: str, priority: int,
-            eventtype: int, eventflags: int, t: datetime, props: dict | None = None) -> int:
+    def add(
+        self,
+        eventid: str,
+        source: str,
+        displaypath: str,
+        priority: int,
+        eventtype: int,
+        eventflags: int,
+        t: datetime,
+        props: dict | None = None,
+    ) -> int:
         rid = self.next_id
         self.next_id += 1
-        self.events.append((rid, eventid, source, displaypath, priority, eventtype,
-                            eventflags, format_time(t)))
+        self.events.append(
+            (
+                rid,
+                eventid,
+                source,
+                displaypath,
+                priority,
+                eventtype,
+                eventflags,
+                format_time(t),
+            )
+        )
         for name, val in (props or {}).items():
             if isinstance(val, bool) or isinstance(val, int):
                 self.data.append((rid, name, DT_INT, int(val), None, None))
@@ -230,8 +306,12 @@ class JournalWriter:
         return rid
 
     def flush(self) -> None:
-        self.con.executemany("INSERT INTO alarm_events VALUES (?,?,?,?,?,?,?,?)", self.events)
-        self.con.executemany("INSERT INTO alarm_event_data VALUES (?,?,?,?,?,?)", self.data)
+        self.con.executemany(
+            "INSERT INTO alarm_events VALUES (?,?,?,?,?,?,?,?)", self.events
+        )
+        self.con.executemany(
+            "INSERT INTO alarm_event_data VALUES (?,?,?,?,?,?)", self.data
+        )
         self.con.commit()
         self.events.clear()
         self.data.clear()
@@ -242,8 +322,13 @@ class JournalWriter:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         # a leftover rollback journal beside the target would be replayed
         # into the new file on first open; remove it with the old database
-        for stale in (self.path, *(self.path.with_name(self.path.name + s)
-                                   for s in ("-journal", "-wal", "-shm"))):
+        for stale in (
+            self.path,
+            *(
+                self.path.with_name(self.path.name + s)
+                for s in ("-journal", "-wal", "-shm")
+            ),
+        ):
             if stale.exists():
                 stale.unlink()
         shutil.move(str(self.tmp), str(self.path))

@@ -5,6 +5,7 @@ and ends when fewer than `end_below` arrive within ten minutes. The
 rolling count is evaluated once a minute, which is fine enough for
 reporting and keeps the method easy to check by hand.
 """
+
 from __future__ import annotations
 
 from collections import Counter
@@ -28,8 +29,14 @@ class Flood:
 
 
 # listing: find_floods
-def find_floods(times: list[datetime], start: datetime, end: datetime,
-                begin: int = 10, end_below: int = 5, window_min: int = 10) -> list[Flood]:
+def find_floods(
+    times: list[datetime],
+    start: datetime,
+    end: datetime,
+    begin: int = 10,
+    end_below: int = 5,
+    window_min: int = 10,
+) -> list[Flood]:
     """Return flood periods found in a sorted list of alarm times.
 
     A flood starts at the first alarm of the ten-minute window that took
@@ -51,10 +58,12 @@ def find_floods(times: list[datetime], start: datetime, end: datetime,
         rolling += per_min[i]
         if i >= window_min:
             rolling -= per_min[i - window_min]
-        t = start + timedelta(minutes=i + 1)        # end of this minute
+        t = start + timedelta(minutes=i + 1)  # end of this minute
         if current is None and rolling > begin:
-            first = max(0, i - window_min + 1)       # window that tripped it
-            current = Flood(start + timedelta(minutes=first), t, peak_10min=rolling)
+            first = max(0, i - window_min + 1)  # window that tripped it
+            current = Flood(
+                start + timedelta(minutes=first), t, peak_10min=rolling
+            )
         elif current is not None:
             current.peak_10min = max(current.peak_10min, rolling)
             if rolling < end_below:
@@ -66,17 +75,27 @@ def find_floods(times: list[datetime], start: datetime, end: datetime,
         floods.append(current)
     for f in floods:
         inside = [t for t in times if f.start <= t < f.end]
-        f.start = inside[0]                  # the first alarm, not the window edge
+        f.start = inside[0]  # the first alarm, not the window edge
         f.count = len(inside)
     return floods
+
+
 # end listing
 
 
-def floods_for(pj: ParsedJournal, console: str | None = None, begin: int = 10,
-               end_below: int = 5) -> list[Flood]:
+def floods_for(
+    pj: ParsedJournal,
+    console: str | None = None,
+    begin: int = 10,
+    end_below: int = 5,
+) -> list[Flood]:
     """Floods for one console with their episodes attached."""
-    eps = [e for e in pj.annunciated() if console is None or e.console == console]
-    fl = find_floods([e.active for e in eps], pj.start, pj.end, begin, end_below)
+    eps = [
+        e for e in pj.annunciated() if console is None or e.console == console
+    ]
+    fl = find_floods(
+        [e.active for e in eps], pj.start, pj.end, begin, end_below
+    )
     j = 0
     for f in fl:
         while j < len(eps) and eps[j].active < f.start:
@@ -94,13 +113,17 @@ def flood_summary(f: Flood, top: int = 5) -> dict:
     by_src = Counter(e.displaypath for e in f.episodes)
     first = f.episodes[0] if f.episodes else None
     return {
-        "start": f.start, "minutes": round(f.minutes, 1), "alarms": f.count,
+        "start": f.start,
+        "minutes": round(f.minutes, 1),
+        "alarms": f.count,
         "peak_10min": f.peak_10min,
         "first_out": first.displaypath if first else "",
         "distinct": len(by_src),
         "top": by_src.most_common(top),
         "high_or_critical": sum(1 for e in f.episodes if e.priority >= 3),
     }
+
+
 # end listing
 
 

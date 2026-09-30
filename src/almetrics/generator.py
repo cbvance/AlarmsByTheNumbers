@@ -17,6 +17,7 @@ Fixes (combine any; "all" applies every one):
   state      state-based suppression of predictable trip consequences
   stale      repair the conditions behind stale alarms
 """
+
 from __future__ import annotations
 
 import math
@@ -26,9 +27,20 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from .journal import (ACK, ACTIVE, CLEAR, DISABLED, ENABLED, FLAG_ACKED,
-                      FLAG_CLEARED, FLAG_ENABLED, FLAG_SHELVED, FLAG_SYS_ACK,
-                      FLAG_SYSTEM, JournalWriter)
+from .journal import (
+    ACK,
+    ACTIVE,
+    CLEAR,
+    DISABLED,
+    ENABLED,
+    FLAG_ACKED,
+    FLAG_CLEARED,
+    FLAG_ENABLED,
+    FLAG_SHELVED,
+    FLAG_SYS_ACK,
+    FLAG_SYSTEM,
+    JournalWriter,
+)
 from .site import AlarmDef, Site
 
 ALL_FIXES = ("deadband", "setpoint", "priority", "remove", "state", "stale")
@@ -37,7 +49,7 @@ ALL_FIXES = ("deadband", "setpoint", "priority", "remove", "state", "stale")
 @dataclass
 class Activation:
     alarm: AlarmDef
-    t_on: float          # seconds from start of window
+    t_on: float  # seconds from start of window
     t_off: float | None  # None: still active at end of window
     value: float
     shelved: bool = False
@@ -45,9 +57,16 @@ class Activation:
 
 
 # listing: evaluate_alarm
-def evaluate(pv: list[float], t0: float, high: bool, setpoint: float,
-             deadband: float, on_delay: float, off_delay: float,
-             dt: float = 1.0) -> list[tuple[float, float, float]]:
+def evaluate(
+    pv: list[float],
+    t0: float,
+    high: bool,
+    setpoint: float,
+    deadband: float,
+    on_delay: float,
+    off_delay: float,
+    dt: float = 1.0,
+) -> list[tuple[float, float, float]]:
     """Run a sampled PV through Ignition-style alarm logic.
 
     Returns (t_on, t_off, value_at_on) for each activation. The condition
@@ -57,7 +76,7 @@ def evaluate(pv: list[float], t0: float, high: bool, setpoint: float,
     """
     out = []
     active = False
-    since = None          # time the pending transition started
+    since = None  # time the pending transition started
     t_on = v_on = 0.0
     for i, v in enumerate(pv):
         t = t0 + i * dt
@@ -81,6 +100,8 @@ def evaluate(pv: list[float], t0: float, high: bool, setpoint: float,
     if active:
         out.append((t_on, t0 + len(pv) * dt, v_on))
     return out
+
+
 # end listing
 
 
@@ -94,7 +115,9 @@ def _cfg(alarm: AlarmDef, fixes: set[str]) -> tuple[float, float, float]:
     return 0.0, 0.0, 0.0
 
 
-def _ar1(rng: random.Random, n: int, sigma: float, phi: float = 0.9) -> list[float]:
+def _ar1(
+    rng: random.Random, n: int, sigma: float, phi: float = 0.9
+) -> list[float]:
     """Correlated noise, like a real transmitter signal sampled at 1 s."""
     scale = sigma * math.sqrt(1 - phi * phi)
     x, out = rng.gauss(0, sigma), []
@@ -104,17 +127,26 @@ def _ar1(rng: random.Random, n: int, sigma: float, phi: float = 0.9) -> list[flo
     return out
 
 
-def _chatter_window(rng, alarm, sig, t_start, minutes, fixes) -> list[Activation]:
+def _chatter_window(
+    rng, alarm, sig, t_start, minutes, fixes
+) -> list[Activation]:
     n = int(minutes * 60)
     noise = _ar1(rng, n, sig["sigma"])
     sign = 1 if _is_high(alarm) else -1
     # mean drifts slowly across the setpoint and back
-    drift = [sign * sig["sigma"] * 1.2 * math.sin(math.pi * i / n) - sign * 0.3 * sig["sigma"]
-             for i in range(n)]
+    drift = [
+        sign * sig["sigma"] * 1.2 * math.sin(math.pi * i / n)
+        - sign * 0.3 * sig["sigma"]
+        for i in range(n)
+    ]
     pv = [alarm.setpoint + d + e for d, e in zip(drift, noise)]
     db, on_d, off_d = _cfg(alarm, fixes)
-    return [Activation(alarm, a, b, v) for a, b, v in
-            evaluate(pv, t_start, _is_high(alarm), alarm.setpoint, db, on_d, off_d)]
+    return [
+        Activation(alarm, a, b, v)
+        for a, b, v in evaluate(
+            pv, t_start, _is_high(alarm), alarm.setpoint, db, on_d, off_d
+        )
+    ]
 
 
 def _excursion_value(rng, alarm) -> float:
@@ -124,21 +156,37 @@ def _excursion_value(rng, alarm) -> float:
 
 
 # listing: generate
-def generate(site: Site, db_path: str | Path, start: datetime, days: int,
-             fixes: set[str] | tuple[str, ...] = (), seed: int = 1843) -> dict:
+def generate(
+    site: Site,
+    db_path: str | Path,
+    start: datetime,
+    days: int,
+    fixes: set[str] | tuple[str, ...] = (),
+    seed: int = 1843,
+) -> dict:
     """Write a synthetic journal and return a summary of what was planted."""
     fixes = set(ALL_FIXES) if "all" in fixes else set(fixes)
     rng = random.Random(seed)
     horizon = days * 86400.0
     acts: dict[str, list[Activation]] = {a.source: [] for a in site.alarms}
     by_src = site.by_source()
-    live = {a.source for a in site.alarms if not ("remove" in fixes and a.rat.remove)}
-    toggles: list[tuple[float, AlarmDef, int]] = []   # (time, alarm, ENABLED/DISABLED)
+    live = {
+        a.source
+        for a in site.alarms
+        if not ("remove" in fixes and a.rat.remove)
+    }
+    toggles: list[tuple[float, AlarmDef, int]] = (
+        []
+    )  # (time, alarm, ENABLED/DISABLED)
     planted = {"upsets": [], "chatter_windows": 0, "fleeting_spikes": 0}
 
     # 1. genuine excursions on every live alarm
     for a in site.alarms:
-        rate = a.rat.rate if ("setpoint" in fixes and a.rat.rate is not None) else a.rate
+        rate = (
+            a.rat.rate
+            if ("setpoint" in fixes and a.rat.rate is not None)
+            else a.rate
+        )
         if a.source not in live or rate <= 0:
             continue
         n = _poisson(rng, rate * days)
@@ -148,15 +196,24 @@ def generate(site: Site, db_path: str | Path, start: datetime, days: int,
             db, on_d, off_d = _cfg(a, fixes)
             if dur <= on_d:
                 continue
-            acts[a.source].append(Activation(a, t + on_d, t + dur + off_d,
-                                             _excursion_value(rng, a)))
+            acts[a.source].append(
+                Activation(
+                    a, t + on_d, t + dur + off_d, _excursion_value(rng, a)
+                )
+            )
             # with no deadband, the return through setpoint rattles
             if db == 0 and rng.random() < 0.12:
                 tt = t + dur
                 for _ in range(rng.randint(1, 2)):
                     tt += rng.uniform(3, 25)
-                    acts[a.source].append(Activation(a, tt, tt + rng.uniform(1, 12),
-                                                     _excursion_value(rng, a)))
+                    acts[a.source].append(
+                        Activation(
+                            a,
+                            tt,
+                            tt + rng.uniform(1, 12),
+                            _excursion_value(rng, a),
+                        )
+                    )
                     tt += 12
 
     # 2. chattering and fleeting signals
@@ -177,8 +234,14 @@ def generate(site: Site, db_path: str | Path, start: datetime, days: int,
                 dur = rng.expovariate(1 / sig["mean_s"])
                 planted["fleeting_spikes"] += 1
                 if dur > on_d:
-                    acts[src].append(Activation(a, t + on_d, t + dur + off_d,
-                                                _excursion_value(rng, a)))
+                    acts[src].append(
+                        Activation(
+                            a,
+                            t + on_d,
+                            t + dur + off_d,
+                            _excursion_value(rng, a),
+                        )
+                    )
 
     # 3. stale conditions: out-of-service equipment, failed analyzers
     if "stale" not in fixes:
@@ -190,9 +253,14 @@ def generate(site: Site, db_path: str | Path, start: datetime, days: int,
                 t_on, t_off = d0 * 86400.0, d1 * 86400.0
                 if t_on >= horizon:
                     continue
-                acts[src].append(Activation(a, t_on + rng.uniform(0, 600),
-                                            None if t_off >= horizon else t_off,
-                                            _excursion_value(rng, a)))
+                acts[src].append(
+                    Activation(
+                        a,
+                        t_on + rng.uniform(0, 600),
+                        None if t_off >= horizon else t_off,
+                        _excursion_value(rng, a),
+                    )
+                )
 
     # 4. plant upsets and their cascades
     starts = []
@@ -208,7 +276,9 @@ def generate(site: Site, db_path: str | Path, start: datetime, days: int,
         last_end = t0 + dur
         planted["upsets"].append((up.name, t0))
         ini = by_src[up.initiator]
-        acts[ini.source].append(Activation(ini, t0, t0 + dur, 1.0, in_upset=True))
+        acts[ini.source].append(
+            Activation(ini, t0, t0 + dur, 1.0, in_upset=True)
+        )
         for step in up.cascade:
             a = by_src[step.alarm]
             if a.source not in live or rng.random() > step.p:
@@ -219,14 +289,23 @@ def generate(site: Site, db_path: str | Path, start: datetime, days: int,
                 continue
             t = t0 + rng.uniform(step.min_s, step.max_s)
             if a.behavior == "chatter" and a.source in site.signals:
-                for act in _chatter_window(rng, a, site.signals[a.source], t,
-                                           rng.uniform(6, 15), fixes):
+                for act in _chatter_window(
+                    rng,
+                    a,
+                    site.signals[a.source],
+                    t,
+                    rng.uniform(6, 15),
+                    fixes,
+                ):
                     act.in_upset = True
                     acts[a.source].append(act)
             else:
                 off = t + rng.uniform(0.3, 1.0) * max(dur - (t - t0), 300)
-                acts[a.source].append(Activation(a, t, off, _excursion_value(rng, a),
-                                                 in_upset=True))
+                acts[a.source].append(
+                    Activation(
+                        a, t, off, _excursion_value(rng, a), in_upset=True
+                    )
+                )
 
     # 5. merge overlaps per alarm, then shelving by the operators
     for src, lst in acts.items():
@@ -235,9 +314,13 @@ def generate(site: Site, db_path: str | Path, start: datetime, days: int,
         for x in lst:
             if x.t_on >= horizon:
                 continue
-            if merged and (merged[-1].t_off is None or x.t_on <= merged[-1].t_off):
+            if merged and (
+                merged[-1].t_off is None or x.t_on <= merged[-1].t_off
+            ):
                 prev = merged[-1]
-                if prev.t_off is not None and (x.t_off is None or x.t_off > prev.t_off):
+                if prev.t_off is not None and (
+                    x.t_off is None or x.t_off > prev.t_off
+                ):
                     prev.t_off = x.t_off
                 continue
             if x.t_off is not None and x.t_off >= horizon:
@@ -247,9 +330,13 @@ def generate(site: Site, db_path: str | Path, start: datetime, days: int,
         if by_src[src].behavior == "chatter":
             _shelve(rng, merged, 0.01 if "deadband" in fixes else 0.06)
 
-    summary = _write(site, db_path, start, horizon, acts, toggles, fixes, rng, live)
+    summary = _write(
+        site, db_path, start, horizon, acts, toggles, fixes, rng, live
+    )
     summary.update(planted)
     return summary
+
+
 # end listing
 
 
@@ -292,9 +379,11 @@ def _active_at(lst: list[Activation], t: float) -> bool:
     return any(x.t_on <= t and (x.t_off is None or x.t_off > t) for x in lst)
 
 
-def _write(site, db_path, start, horizon, acts, toggles, fixes, rng, live=None) -> dict:
+def _write(
+    site, db_path, start, horizon, acts, toggles, fixes, rng, live=None
+) -> dict:
     live = live if live is not None else {a.source for a in site.alarms}
-    rows = []   # (t, order, kind, payload)
+    rows = []  # (t, order, kind, payload)
     for src, lst in acts.items():
         for x in lst:
             rows.append((x.t_on, 0, "on", x))
@@ -306,7 +395,11 @@ def _write(site, db_path, start, horizon, acts, toggles, fixes, rng, live=None) 
     for t_on, _, _, x in rows:
         a = x.alarm
         eid = _uuid(rng)
-        pri = a.rat.priority if ("priority" in fixes and a.rat.priority is not None) else a.priority
+        pri = (
+            a.rat.priority
+            if ("priority" in fixes and a.rat.priority is not None)
+            else a.priority
+        )
         shelf = FLAG_SHELVED if x.shelved else 0
         props = {"setpointA": float(a.setpoint), "eventValue": float(x.value)}
         out_rows.append((t_on, eid, a, pri, ACTIVE, shelf, props))
@@ -320,17 +413,46 @@ def _write(site, db_path, start, horizon, acts, toggles, fixes, rng, live=None) 
             if t_ack >= horizon:
                 t_ack = None
         if x.t_off is not None:
-            flags = FLAG_CLEARED | shelf | (FLAG_ACKED if t_ack is not None and t_ack <= x.t_off else 0)
-            out_rows.append((x.t_off, eid, a, pri, CLEAR, flags, {"eventValue": float(a.setpoint)}))
+            flags = (
+                FLAG_CLEARED
+                | shelf
+                | (FLAG_ACKED if t_ack is not None and t_ack <= x.t_off else 0)
+            )
+            out_rows.append(
+                (
+                    x.t_off,
+                    eid,
+                    a,
+                    pri,
+                    CLEAR,
+                    flags,
+                    {"eventValue": float(a.setpoint)},
+                )
+            )
         if t_ack is not None:
-            flags = FLAG_CLEARED if x.t_off is not None and x.t_off < t_ack else 0
+            flags = (
+                FLAG_CLEARED if x.t_off is not None and x.t_off < t_ack else 0
+            )
             hour = (start + timedelta(seconds=t_ack)).hour
             day_user, night_user = site.operators[a.console]
-            out_rows.append((t_ack, eid, a, pri, ACK, flags,
-                             {"ackUser": day_user if 6 <= hour < 18 else night_user}))
+            out_rows.append(
+                (
+                    t_ack,
+                    eid,
+                    a,
+                    pri,
+                    ACK,
+                    flags,
+                    {"ackUser": day_user if 6 <= hour < 18 else night_user},
+                )
+            )
     for t, a, kind in toggles:
         if t < horizon:
-            pri = a.rat.priority if ("priority" in fixes and a.rat.priority is not None) else a.priority
+            pri = (
+                a.rat.priority
+                if ("priority" in fixes and a.rat.priority is not None)
+                else a.priority
+            )
             out_rows.append((t, _uuid(rng), a, pri, kind, FLAG_ENABLED, {}))
     # listing: restart_rows
     # two gateway restarts in the window, as a real journal would show them:
@@ -341,19 +463,51 @@ def _write(site, db_path, start, horizon, acts, toggles, fixes, rng, live=None) 
     for _ in range(2):
         t = rng.uniform(0, horizon - 600)
         up = t + rng.uniform(90, 240)
-        out_rows.append((t, _uuid(rng), "System Shutdown", 0, ACTIVE, FLAG_SYSTEM, {}))
-        out_rows.append((up, _uuid(rng), "System Startup", 0, ACTIVE, FLAG_SYSTEM, {}))
+        out_rows.append(
+            (t, _uuid(rng), "System Shutdown", 0, ACTIVE, FLAG_SYSTEM, {})
+        )
+        out_rows.append(
+            (up, _uuid(rng), "System Startup", 0, ACTIVE, FLAG_SYSTEM, {})
+        )
         for a in site.alarms:
             if a.source in live and not _active_at(acts.get(a.source, []), up):
-                pri = a.rat.priority if ("priority" in fixes and a.rat.priority is not None) else a.priority
-                out_rows.append((up + rr.uniform(0.5, 5), _uuid(rr), a, pri, CLEAR,
-                                 FLAG_SYS_ACK | FLAG_ACKED | FLAG_CLEARED, {}))
+                pri = (
+                    a.rat.priority
+                    if ("priority" in fixes and a.rat.priority is not None)
+                    else a.priority
+                )
+                out_rows.append(
+                    (
+                        up + rr.uniform(0.5, 5),
+                        _uuid(rr),
+                        a,
+                        pri,
+                        CLEAR,
+                        FLAG_SYS_ACK | FLAG_ACKED | FLAG_CLEARED,
+                        {},
+                    )
+                )
     # end listing
 
     out_rows.sort(key=lambda r: (r[0], r[4]))
     for t, eid, a, pri, etype, flags, props in out_rows:
         src, disp = (a, a) if isinstance(a, str) else (a.source, a.displaypath)
-        w.add(eid, src, disp, pri, etype, flags, start + timedelta(seconds=t), props)
+        w.add(
+            eid,
+            src,
+            disp,
+            pri,
+            etype,
+            flags,
+            start + timedelta(seconds=t),
+            props,
+        )
     w.close()
-    return {"db": str(db_path), "activations": n_act, "rows": w.next_id - 1,
-            "fixes": sorted(fixes), "start": start.isoformat(), "days": horizon / 86400}
+    return {
+        "db": str(db_path),
+        "activations": n_act,
+        "rows": w.next_id - 1,
+        "fixes": sorted(fixes),
+        "start": start.isoformat(),
+        "days": horizon / 86400,
+    }

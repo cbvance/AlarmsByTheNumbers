@@ -4,6 +4,7 @@ Thresholds are parameters, not constants. Chapter 12 explains where the
 defaults come from and why a site should write its own into the alarm
 philosophy.
 """
+
 from __future__ import annotations
 
 from collections import defaultdict
@@ -20,14 +21,15 @@ class ChatterStat:
     displaypath: str
     console: str
     activations: int = 0
-    bursts: int = 0          # separate runs that met the chatter rule
+    bursts: int = 0  # separate runs that met the chatter rule
     max_in_window: int = 0
-    in_bursts: int = 0       # activations that were part of a burst
+    in_bursts: int = 0  # activations that were part of a burst
 
 
 # listing: find_chattering
-def find_chattering(episodes: list[Episode], count: int = 3,
-                    window_s: float = 60.0) -> dict[str, ChatterStat]:
+def find_chattering(
+    episodes: list[Episode], count: int = 3, window_s: float = 60.0
+) -> dict[str, ChatterStat]:
     """Alarms that went active `count` or more times within `window_s`.
 
     Returns only the chattering alarms, keyed by source. A burst is a run
@@ -56,17 +58,28 @@ def find_chattering(episodes: list[Episode], count: int = 3,
         if stat.bursts:
             out[src] = stat
     return out
+
+
 # end listing
 
 
-def chatterers(chatter: dict[str, ChatterStat], share: float = 0.5) -> set[str]:
+def chatterers(
+    chatter: dict[str, ChatterStat], share: float = 0.5
+) -> set[str]:
     """Sources whose activations mostly came in chatter bursts."""
-    return {s for s, st in chatter.items() if st.in_bursts >= share * st.activations}
+    return {
+        s
+        for s, st in chatter.items()
+        if st.in_bursts >= share * st.activations
+    }
 
 
 # listing: find_fleeting
-def find_fleeting(episodes: list[Episode], max_s: float = 5.0,
-                  exclude: set[str] | None = None) -> dict[str, int]:
+def find_fleeting(
+    episodes: list[Episode],
+    max_s: float = 5.0,
+    exclude: set[str] | None = None,
+) -> dict[str, int]:
     """Count activations that cleared within max_s, by source.
 
     Pass chatterers(...) as `exclude` so an alarm that mostly chatters is
@@ -80,6 +93,8 @@ def find_fleeting(episodes: list[Episode], max_s: float = 5.0,
         if (e.clear - e.active).total_seconds() <= max_s:
             out[e.source] += 1
     return dict(out)
+
+
 # end listing
 
 
@@ -91,8 +106,9 @@ class StaleDay:
 
 
 # listing: stale_by_day
-def stale_by_day(pj: ParsedJournal, console: str | None = None,
-                 stale_h: float = 24.0) -> list[StaleDay]:
+def stale_by_day(
+    pj: ParsedJournal, console: str | None = None, stale_h: float = 24.0
+) -> list[StaleDay]:
     """Snapshot at each midnight: which alarms were stale, which standing.
 
     Stale: active for more than stale_h at the snapshot.
@@ -100,10 +116,16 @@ def stale_by_day(pj: ParsedJournal, console: str | None = None,
     Episodes that were active before the data starts cannot be seen; the
     first stale_h of the window undercounts, and the report says so.
     """
-    eps = [e for e in pj.annunciated() if console is None or e.console == console]
+    eps = [
+        e for e in pj.annunciated() if console is None or e.console == console
+    ]
     # only episodes that span a midnight can appear in a snapshot
-    eps = [e for e in eps if e.clear is None or e.clear.date() > e.active.date()]
-    day0 = datetime(pj.start.year, pj.start.month, pj.start.day) + timedelta(days=1)
+    eps = [
+        e for e in eps if e.clear is None or e.clear.date() > e.active.date()
+    ]
+    day0 = datetime(pj.start.year, pj.start.month, pj.start.day) + timedelta(
+        days=1
+    )
     out = []
     d = day0
     while d <= pj.end:
@@ -120,6 +142,8 @@ def stale_by_day(pj: ParsedJournal, console: str | None = None,
         out.append(snap)
         d += timedelta(days=1)
     return out
+
+
 # end listing
 
 
@@ -135,7 +159,9 @@ def stale_summary(days: list[StaleDay]) -> dict:
         "max_stale": max(counts) if counts else 0,
         "mean_stale": sum(counts) / len(counts) if counts else 0.0,
         "days_over_5": sum(1 for c in counts if c >= 5),
-        "mean_standing": (sum(len(d.standing) for d in days) / len(days)) if days else 0.0,
+        "mean_standing": (
+            (sum(len(d.standing) for d in days) / len(days)) if days else 0.0
+        ),
         "longest": sorted(names.items(), key=lambda kv: -kv[1]),
     }
 

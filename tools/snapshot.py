@@ -11,6 +11,7 @@ It writes tools/listings.json ({name: {file, start, end, code}}) and fails
 if a name is used twice or a block is left open. The book build reads
 listings by name from that file, never from copied text.
 """
+
 from __future__ import annotations
 
 import json
@@ -33,8 +34,12 @@ def extract(path: Path) -> dict[str, dict]:
         elif s == "# end listing":
             if not name:
                 raise SystemExit(f"{path}:{n}: end without start")
-            found[name] = {"file": path.relative_to(ROOT).as_posix(), "start": start,
-                           "end": n - 1, "code": textwrap.dedent("\n".join(buf)).strip("\n")}
+            found[name] = {
+                "file": path.relative_to(ROOT).as_posix(),
+                "start": start,
+                "end": n - 1,
+                "code": textwrap.dedent("\n".join(buf)).strip("\n"),
+            }
             name = None
         elif name:
             buf.append(line)
@@ -45,10 +50,14 @@ def extract(path: Path) -> dict[str, dict]:
 
 def main() -> int:
     listings: dict[str, dict] = {}
-    for path in sorted((ROOT / "src").rglob("*.py")) + sorted((ROOT / "tests").rglob("*.py")):
+    for path in sorted((ROOT / "src").rglob("*.py")) + sorted(
+        (ROOT / "tests").rglob("*.py")
+    ):
         for name, rec in extract(path).items():
             if name in listings:
-                raise SystemExit(f"duplicate listing name {name!r} in {rec['file']}")
+                raise SystemExit(
+                    f"duplicate listing name {name!r} in {rec['file']}"
+                )
             listings[name] = rec
     OUT.write_text(json.dumps(listings, indent=1) + "\n", encoding="utf-8")
     print(f"{len(listings)} listings -> {OUT.relative_to(ROOT).as_posix()}")

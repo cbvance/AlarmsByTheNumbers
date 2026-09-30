@@ -4,6 +4,7 @@ One episode is one active, acknowledge, clear cycle of one alarm, the
 unit Ignition gives a single eventid. Every metric in the book counts or
 times episodes, so this is the step everything else rests on.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -40,6 +41,8 @@ class Episode:
         if self.active and self.ack:
             return (self.ack - self.active).total_seconds()
         return None
+
+
 # end listing
 
 
@@ -56,13 +59,16 @@ class ParsedJournal:
     episodes: list[Episode]
     toggles: list[Toggle] = field(default_factory=list)
     system: list[Event] = field(default_factory=list)
-    orphans: int = 0          # clear or ack with no active row in the data
+    orphans: int = 0  # clear or ack with no active row in the data
     start: datetime | None = None
     end: datetime | None = None
 
     def annunciated(self, min_priority: int = 1) -> list[Episode]:
-        return [e for e in self.episodes
-                if e.annunciated and e.priority >= min_priority]
+        return [
+            e
+            for e in self.episodes
+            if e.annunciated and e.priority >= min_priority
+        ]
 
     @property
     def days(self) -> float:
@@ -75,9 +81,12 @@ class ParsedJournal:
 
 
 # listing: parse_journal
-def parse_journal(events: list[Event], consoles: ConsoleMap | None = None,
-                  start: datetime | None = None,
-                  end: datetime | None = None) -> ParsedJournal:
+def parse_journal(
+    events: list[Event],
+    consoles: ConsoleMap | None = None,
+    start: datetime | None = None,
+    end: datetime | None = None,
+) -> ParsedJournal:
     """Group transition rows by eventid into episodes.
 
     Rows must be in time order (load_events returns them that way).
@@ -94,13 +103,24 @@ def parse_journal(events: list[Event], consoles: ConsoleMap | None = None,
             out.system.append(ev)
             continue
         if ev.eventtype in (ENABLED, DISABLED):
-            out.toggles.append(Toggle(ev.eventtime, ev.source, ev.displaypath,
-                                      ev.eventtype == ENABLED))
+            out.toggles.append(
+                Toggle(
+                    ev.eventtime,
+                    ev.source,
+                    ev.displaypath,
+                    ev.eventtype == ENABLED,
+                )
+            )
             continue
         ep = eps.get(ev.eventid)
         if ep is None:
-            ep = Episode(ev.eventid, ev.source, ev.displaypath, ev.priority,
-                         consoles.console(ev.source))
+            ep = Episode(
+                ev.eventid,
+                ev.source,
+                ev.displaypath,
+                ev.priority,
+                consoles.console(ev.source),
+            )
             eps[ev.eventid] = ep
         if ev.eventtype == ACTIVE and ep.active is None:
             ep.active = ev.eventtime
@@ -119,7 +139,12 @@ def parse_journal(events: list[Event], consoles: ConsoleMap | None = None,
     out.start = start or (min(times) if times else None)
     out.end = end or (max(times) if times else None)
     if start or end:
-        out.episodes = [e for e in out.episodes
-                        if (not start or e.active >= start) and (not end or e.active < end)]
+        out.episodes = [
+            e
+            for e in out.episodes
+            if (not start or e.active >= start) and (not end or e.active < end)
+        ]
     return out
+
+
 # end listing
