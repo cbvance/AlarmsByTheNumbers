@@ -56,3 +56,46 @@ def test_missing_journal_is_not_created(tmp_path):
     with pytest.raises(FileNotFoundError):
         load_events(missing)
     assert not missing.exists()
+
+
+def test_readers_close_their_connections(tmp_path, monkeypatch):
+    """Windows cannot replace a file that is still open, so every reader
+    must close its connection, not just leave it to garbage collection."""
+    import sqlite3
+
+    import almetrics.journal as j
+
+    db = tmp_path / "j.db"
+    w = JournalWriter(db)
+    w.add(
+        "e1",
+        "prov:default:/tag:A:/alm:H",
+        "A H",
+        3,
+        ACTIVE,
+        0,
+        datetime(2026, 1, 1),
+        {"eventValue": 1.0},
+    )
+    w.close()
+    opened = []
+    real = sqlite3.connect
+
+    class Tracked:
+        def __init__(self, *a, **k):
+            self.con = real(*a, **k)
+            self.closed = False
+            opened.append(self)
+
+        def execute(self, *a):
+            return self.con.execute(*a)
+
+        def close(self):
+            self.closed = True
+            self.con.close()
+
+    monkeypatch.setattr(j.sqlite3, "connect", Tracked)
+    load_events(db)
+    load_event_data(db)
+    export_csv(db, tmp_path / "csv")
+    assert opened and all(c.closed for c in opened)

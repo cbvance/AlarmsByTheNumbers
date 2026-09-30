@@ -41,7 +41,7 @@ def run_stages(
     rows = []
     with tempfile.TemporaryDirectory() as tmp:
         for name, fixes in stages:
-            db = Path(tmp) / "stage.db"
+            db = Path(tmp) / f"stage{len(rows)}.db"
             generate(site, db, start, days, fixes, seed)
             pj = parse_journal(load_events(db), cmap)
             ms = [console_metrics(pj, c) for c in pj.consoles()]

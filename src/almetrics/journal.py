@@ -14,6 +14,7 @@ them, and writes the same layout for the synthetic generator.
 
 from __future__ import annotations
 
+import contextlib
 import csv
 import os
 import shutil
@@ -146,7 +147,7 @@ def load_events(path: str | Path, table: str = "alarm_events") -> list[Event]:
     if path.suffix.lower() == ".csv":
         rows = _read_csv(path)
     else:
-        with connect_readonly(path) as con:
+        with contextlib.closing(connect_readonly(path)) as con:
             cur = con.execute(
                 "SELECT id, eventid, source, displaypath, priority,"
                 f" eventtype, eventflags, eventtime FROM {table}"
@@ -212,7 +213,7 @@ def load_event_data(
     if path.suffix.lower() == ".csv":
         rows = _read_csv(path)
     else:
-        with connect_readonly(path) as con:
+        with contextlib.closing(connect_readonly(path)) as con:
             cur = con.execute(
                 f"SELECT id, propname, dtype, intvalue, floatvalue, strvalue FROM {table}"
             )
@@ -339,7 +340,7 @@ def export_csv(db: str | Path, outdir: str | Path) -> tuple[Path, Path]:
     outdir = Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)
     paths = []
-    with connect_readonly(db) as con:
+    with contextlib.closing(connect_readonly(db)) as con:
         for table in ("alarm_events", "alarm_event_data"):
             cur = con.execute(f"SELECT * FROM {table} ORDER BY id")
             p = outdir / f"{table}.csv"

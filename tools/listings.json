@@ -91,21 +91,21 @@
  },
  "event_constants": {
   "file": "src/almetrics/journal.py",
-  "start": 28,
-  "end": 40,
+  "start": 29,
+  "end": 41,
   "code": "# alarm_events.eventtype\nACTIVE, CLEAR, ACK, ENABLED, DISABLED = 0, 1, 2, 4, 5\n\n# alarm_events.eventflags bits\nFLAG_SYSTEM = 1 << 0  # System Startup / System Shutdown rows\nFLAG_SHELVED = 1 << 1  # alarm was shelved when the event occurred\nFLAG_SYS_ACK = 1 << 2  # acknowledged by the system (live event limit)\nFLAG_ACKED = 1 << 3  # already acknowledged at the time of the event\nFLAG_CLEARED = 1 << 4  # already cleared at the time of the event\nFLAG_ENABLED = 1 << 5  # the alarm's enabled state changed\n\n# alarm_event_data.dtype\nDT_INT, DT_FLOAT, DT_STR = 0, 1, 2"
  },
  "event_record": {
   "file": "src/almetrics/journal.py",
-  "start": 71,
-  "end": 90,
+  "start": 72,
+  "end": 91,
   "code": "@dataclass(frozen=True, slots=True)\nclass Event:\n    id: int\n    eventid: str\n    source: str\n    displaypath: str\n    priority: int\n    eventtype: int\n    eventflags: int\n    eventtime: datetime\n\n    @property\n    def is_system(self) -> bool:\n        return bool(self.eventflags & FLAG_SYSTEM)\n\n    @property\n    def is_shelved(self) -> bool:\n        return bool(self.eventflags & FLAG_SHELVED)"
  },
  "load_events": {
   "file": "src/almetrics/journal.py",
-  "start": 139,
-  "end": 188,
-  "code": "def load_events(path: str | Path, table: str = \"alarm_events\") -> list[Event]:\n    \"\"\"Load alarm_events rows from a SQLite file or a CSV export.\n\n    Rows come back sorted by time, then id, which is the order the\n    gateway wrote them.\n    \"\"\"\n    path = Path(path)\n    if path.suffix.lower() == \".csv\":\n        rows = _read_csv(path)\n    else:\n        with connect_readonly(path) as con:\n            cur = con.execute(\n                \"SELECT id, eventid, source, displaypath, priority,\"\n                f\" eventtype, eventflags, eventtime FROM {table}\"\n            )\n            rows = [\n                dict(\n                    zip(\n                        (\n                            \"id\",\n                            \"eventid\",\n                            \"source\",\n                            \"displaypath\",\n                            \"priority\",\n                            \"eventtype\",\n                            \"eventflags\",\n                            \"eventtime\",\n                        ),\n                        r,\n                    )\n                )\n                for r in cur\n            ]\n    events = [\n        Event(\n            int(r[\"id\"]),\n            str(r[\"eventid\"] or \"\"),\n            str(r[\"source\"] or \"\"),\n            str(r[\"displaypath\"] or \"\"),\n            int(r[\"priority\"] or 0),\n            int(r[\"eventtype\"]),\n            int(r[\"eventflags\"] or 0),\n            parse_time(str(r[\"eventtime\"])),\n        )\n        for r in rows\n    ]\n    events.sort(key=lambda e: (e.eventtime, e.id))\n    return events"
+  "start": 140,
+  "end": 189,
+  "code": "def load_events(path: str | Path, table: str = \"alarm_events\") -> list[Event]:\n    \"\"\"Load alarm_events rows from a SQLite file or a CSV export.\n\n    Rows come back sorted by time, then id, which is the order the\n    gateway wrote them.\n    \"\"\"\n    path = Path(path)\n    if path.suffix.lower() == \".csv\":\n        rows = _read_csv(path)\n    else:\n        with contextlib.closing(connect_readonly(path)) as con:\n            cur = con.execute(\n                \"SELECT id, eventid, source, displaypath, priority,\"\n                f\" eventtype, eventflags, eventtime FROM {table}\"\n            )\n            rows = [\n                dict(\n                    zip(\n                        (\n                            \"id\",\n                            \"eventid\",\n                            \"source\",\n                            \"displaypath\",\n                            \"priority\",\n                            \"eventtype\",\n                            \"eventflags\",\n                            \"eventtime\",\n                        ),\n                        r,\n                    )\n                )\n                for r in cur\n            ]\n    events = [\n        Event(\n            int(r[\"id\"]),\n            str(r[\"eventid\"] or \"\"),\n            str(r[\"source\"] or \"\"),\n            str(r[\"displaypath\"] or \"\"),\n            int(r[\"priority\"] or 0),\n            int(r[\"eventtype\"]),\n            int(r[\"eventflags\"] or 0),\n            parse_time(str(r[\"eventtime\"])),\n        )\n        for r in rows\n    ]\n    events.sort(key=lambda e: (e.eventtime, e.id))\n    return events"
  },
  "export_madb": {
   "file": "src/almetrics/madb.py",
