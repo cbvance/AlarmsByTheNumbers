@@ -623,3 +623,80 @@ def ack_histogram(
     ax.set_title(title)
     ax.legend(frameon=False)
     return _save(fig, path)
+
+
+def monthly_trend(
+    rows_by_console: dict[str, list[dict]], path, title: str = "Month by month"
+) -> Path:
+    """Two panels: average per 10 min and time in flood, per console."""
+    style()
+    fig, (top, bot) = plt.subplots(2, 1, figsize=SIZE, sharex=True)
+    for i, (c, rows) in enumerate(rows_by_console.items()):
+        xs = [r["month"][5:] for r in rows]
+        top.plot(
+            xs,
+            [r["per_10min"] for r in rows],
+            color=INK[i % 4],
+            ls=DASH[i % 4],
+            marker="o",
+            ms=3,
+            label=f"Console {c}",
+        )
+        bot.plot(
+            xs,
+            [r["pct_time_in_flood"] for r in rows],
+            color=INK[i % 4],
+            ls=DASH[i % 4],
+            marker="o",
+            ms=3,
+        )
+    top.axhline(2, color="#000000", lw=0.6, ls=":")
+    top.text(0, 2, " 2 per 10 min", fontsize=6.5, va="bottom")
+    top.set_ylabel("Average per 10 min")
+    top.set_ylim(0, None)
+    top.legend(frameon=False, loc="lower right")
+    top.set_title(title)
+    bot.axhline(1, color="#000000", lw=0.6, ls=":")
+    bot.text(0, 1, " 1% target", fontsize=6.5, va="bottom")
+    bot.set_ylabel("Time in flood, %")
+    bot.set_ylim(0, None)
+    bot.set_xlabel("Month")
+    return _save(fig, path)
+
+
+def hour_of_day(
+    pj: ParsedJournal,
+    path,
+    consoles=None,
+    title: str = "Alarms by hour of day",
+) -> Path:
+    """Average annunciated alarms in each clock hour, per console."""
+    style()
+    consoles = consoles or pj.consoles()
+    fig, ax = plt.subplots(figsize=SIZE)
+    for i, c in enumerate(consoles):
+        counts = [0] * 24
+        for e in pj.annunciated():
+            if e.console == c:
+                counts[e.active.hour] += 1
+        ax.plot(
+            range(24),
+            [n / pj.days for n in counts],
+            color=INK[i % 4],
+            ls=DASH[i % 4],
+            marker="o",
+            ms=2.5,
+            label=f"Console {c}",
+        )
+    for h in (6, 18):
+        ax.axvline(h, color="#000000", lw=0.6, ls=":")
+    ax.text(
+        12, ax.get_ylim()[1] * 0.02, "day shift", ha="center", fontsize=6.5
+    )
+    ax.set_xticks(range(0, 24, 3))
+    ax.set_xlabel("Hour of day")
+    ax.set_ylabel("Average alarms in the hour")
+    ax.set_ylim(0, None)
+    ax.set_title(title)
+    ax.legend(frameon=False)
+    return _save(fig, path)

@@ -43,8 +43,8 @@
  },
  "cmd_build": {
   "file": "src/almetrics/cli.py",
-  "start": 385,
-  "end": 460,
+  "start": 415,
+  "end": 490,
   "code": "def cmd_build(args):\n    \"\"\"Generate both Red Mesa journals and every report the book uses.\"\"\"\n    import contextlib\n    from types import SimpleNamespace as NS\n\n    root = Path(args.root)\n    data, out = root / \"data\", root / \"out\"\n    out.mkdir(parents=True, exist_ok=True)\n    before, after = data / \"redmesa_before.db\", data / \"redmesa_after.db\"\n    steps = [\n        (\n            \"generate before\",\n            cmd_generate,\n            NS(\n                site=\"redmesa\",\n                out=before,\n                start=\"2026-01-01\",\n                days=181,\n                fixes=\"\",\n                seed=args.seed,\n            ),\n        ),\n        (\n            \"generate after\",\n            cmd_generate,\n            NS(\n                site=\"redmesa\",\n                out=after,\n                start=\"2026-08-01\",\n                days=91,\n                fixes=\"all\",\n                seed=args.seed,\n            ),\n        ),\n    ]\n    j = dict(journal=before, site=\"redmesa\", consoles=None)\n    reports = [\n        (\"check\", cmd_check, NS(**j)),\n        (\"parse\", cmd_parse, NS(**j)),\n        (\"metrics\", cmd_metrics, NS(**j, json=out / \"metrics.json\")),\n        (\"floods\", cmd_floods, NS(**j, top=10)),\n        (\"chatter\", cmd_chatter, NS(**j, count=3, window=60.0, fleeting=5.0)),\n        (\"stale\", cmd_stale, NS(**j, hours=24.0)),\n        (\n            \"badactors\",\n            cmd_badactors,\n            NS(**j, top=10, console=None, chart=out / \"pareto.png\"),\n        ),\n        (\"shelving\", cmd_shelving, NS(**j)),\n        (\"madb\", cmd_madb, NS(**j, out=out / \"madb.xlsx\")),\n        (\"charts\", cmd_charts, NS(**j, outdir=out / \"charts\")),\n        (\n            \"compare\",\n            cmd_compare,\n            NS(\n                before=before,\n                after=after,\n                site=\"redmesa\",\n                consoles=None,\n                chart=out / \"before_after.png\",\n            ),\n        ),\n    ]\n    for name, fn, ns in steps:\n        print(f\"[build] {name}\")\n        fn(ns)\n    for name, fn, ns in reports:\n        print(f\"[build] {name} -> out/{name}.txt\")\n        with (\n            open(out / f\"{name}.txt\", \"w\", encoding=\"utf-8\") as f,\n            contextlib.redirect_stdout(f),\n        ):\n            fn(ns)\n    print(f\"[build] done: {data} and {out}\")"
  },
  "compare": {
@@ -125,11 +125,23 @@
   "end": 38,
   "code": "@dataclass(frozen=True)\nclass Targets:\n    per_10min_acceptable: float = 1.0  # average annunciated alarms per 10 min\n    per_10min_manageable: float = 2.0\n    flood_begin: int = 10  # alarms in 10 min that start a flood\n    flood_end: int = 5  # below this many in 10 min it ends\n    pct_10min_over: float = 1.0  # percent of 10-min periods above 10\n    max_in_10min: int = 10\n    pct_time_in_flood: float = 1.0\n    top10_pct_max: float = 5.0  # top ten share of all alarms, percent\n    stale_per_day: int = 5  # alarms active > 24 h, any day\n    priority_mix: tuple[float, float, float] = (\n        80.0,\n        15.0,\n        5.0,\n    )  # low, med, high"
  },
+ "ten_minute_counts": {
+  "file": "src/almetrics/metrics.py",
+  "start": 43,
+  "end": 58,
+  "code": "def ten_minute_counts(\n    times: list[datetime], start: datetime, end: datetime\n) -> list[int]:\n    \"\"\"Counts in fixed 10-minute periods from start.\n\n    A partial period at the end is dropped, so every period is 10 minutes.\n    \"\"\"\n    n = int((end - start).total_seconds() // 600)\n    counts = [0] * max(n, 0)\n    for t in times:\n        i = int((t - start).total_seconds() // 600)\n        if 0 <= i < n:\n            counts[i] += 1\n    return counts"
+ },
  "console_metrics": {
   "file": "src/almetrics/metrics.py",
-  "start": 73,
-  "end": 122,
+  "start": 80,
+  "end": 129,
   "code": "def console_metrics(\n    pj: ParsedJournal,\n    console: str | None = None,\n    min_priority: int = 1,\n    targets: Targets = Targets(),\n) -> dict:\n    \"\"\"Headline metrics for one console (or the whole journal if None).\"\"\"\n    eps = [\n        e\n        for e in pj.annunciated(min_priority)\n        if console is None or e.console == console\n    ]\n    times = [e.active for e in eps]\n    tens = ten_minute_counts(times, pj.start, pj.end)\n    periods = len(tens) or 1\n    floods = find_floods(\n        times, pj.start, pj.end, targets.flood_begin, targets.flood_end\n    )\n    flood_s = sum((f.end - f.start).total_seconds() for f in floods)\n    span_s = (pj.end - pj.start).total_seconds()\n    by_pri = Counter(e.priority for e in eps)\n    mix = Counter(priority_bucket(e.priority) for e in eps)\n    by_src = Counter(e.source for e in eps)\n    top10 = sum(n for _, n in by_src.most_common(10))\n    total = len(eps)\n    pct = lambda n: 100.0 * n / total if total else 0.0\n    return {\n        \"console\": console or \"ALL\",\n        \"annunciated\": total,\n        \"days\": round(pj.days, 2),\n        \"per_day\": total / pj.days if pj.days else 0.0,\n        \"per_hour\": total / (pj.days * 24) if pj.days else 0.0,\n        \"per_10min\": total / periods,\n        \"max_10min\": max(tens) if tens else 0,\n        \"pct_10min_over\": 100.0\n        * sum(1 for c in tens if c > targets.flood_begin)\n        / periods,\n        \"floods\": len(floods),\n        \"pct_time_in_flood\": 100.0 * flood_s / span_s if span_s else 0.0,\n        \"priority_counts\": {\n            PRIORITY_NAMES[p]: by_pri.get(p, 0) for p in range(5)\n        },\n        \"priority_mix\": {\n            k: round(pct(mix.get(k, 0)), 1) for k in (\"Low\", \"Medium\", \"High\")\n        },\n        \"distinct_alarms\": len(by_src),\n        \"top10_pct\": pct(top10),\n    }"
+ },
+ "by_month": {
+  "file": "src/almetrics/metrics.py",
+  "start": 163,
+  "end": 193,
+  "code": "def slice_journal(\n    pj: ParsedJournal, start: datetime, end: datetime\n) -> ParsedJournal:\n    \"\"\"The same journal restricted to episodes that began in [start, end).\"\"\"\n    eps = [e for e in pj.episodes if start <= e.active < end]\n    return ParsedJournal(\n        eps,\n        [t for t in pj.toggles if start <= t.time < end],\n        [s for s in pj.system if start <= s.eventtime < end],\n        0,\n        start,\n        end,\n    )\n\n\ndef by_month(\n    pj: ParsedJournal, console: str | None = None, targets: Targets = Targets()\n) -> list[dict]:\n    \"\"\"console_metrics for each calendar month in the journal.\"\"\"\n    out = []\n    m = datetime(pj.start.year, pj.start.month, 1)\n    while m < pj.end:\n        nxt = datetime(m.year + (m.month == 12), m.month % 12 + 1, 1)\n        part = slice_journal(pj, max(m, pj.start), min(nxt, pj.end))\n        row = console_metrics(part, console, targets=targets)\n        row[\"month\"] = f\"{m:%Y-%m}\"\n        out.append(row)\n        m = nxt\n    return out"
  },
  "find_chattering": {
   "file": "src/almetrics/nuisance.py",

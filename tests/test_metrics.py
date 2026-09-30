@@ -61,3 +61,15 @@ def test_priority_buckets():
         "High",
         "High",
     ]
+
+
+def test_by_month_splits_and_sums(builder):
+    from almetrics.metrics import by_month
+
+    day = 86400
+    for i, s in enumerate((0, 10 * day, 40 * day, 45 * day, 70 * day)):
+        builder.cycle(f"m{i}", SRC, s, s + 5)
+    pj = parse_journal(builder.events())
+    rows = by_month(pj)
+    assert [r["month"] for r in rows] == ["2026-01", "2026-02", "2026-03"]
+    assert [r["annunciated"] for r in rows] == [2, 2, 1]

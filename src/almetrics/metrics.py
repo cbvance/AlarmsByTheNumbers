@@ -39,10 +39,14 @@ class Targets:
 # end listing
 
 
+# listing: ten_minute_counts
 def ten_minute_counts(
     times: list[datetime], start: datetime, end: datetime
 ) -> list[int]:
-    """Counts in fixed 10-minute periods from start (partial last period dropped)."""
+    """Counts in fixed 10-minute periods from start.
+
+    A partial period at the end is dropped, so every period is 10 minutes.
+    """
     n = int((end - start).total_seconds() // 600)
     counts = [0] * max(n, 0)
     for t in times:
@@ -50,6 +54,9 @@ def ten_minute_counts(
         if 0 <= i < n:
             counts[i] += 1
     return counts
+
+
+# end listing
 
 
 def daily_counts(
@@ -150,3 +157,38 @@ def as_dict(t: Targets) -> dict:
 def window(pj: ParsedJournal, start: datetime, minutes: int) -> list[Episode]:
     end = start + timedelta(minutes=minutes)
     return [e for e in pj.annunciated() if start <= e.active < end]
+
+
+# listing: by_month
+def slice_journal(
+    pj: ParsedJournal, start: datetime, end: datetime
+) -> ParsedJournal:
+    """The same journal restricted to episodes that began in [start, end)."""
+    eps = [e for e in pj.episodes if start <= e.active < end]
+    return ParsedJournal(
+        eps,
+        [t for t in pj.toggles if start <= t.time < end],
+        [s for s in pj.system if start <= s.eventtime < end],
+        0,
+        start,
+        end,
+    )
+
+
+def by_month(
+    pj: ParsedJournal, console: str | None = None, targets: Targets = Targets()
+) -> list[dict]:
+    """console_metrics for each calendar month in the journal."""
+    out = []
+    m = datetime(pj.start.year, pj.start.month, 1)
+    while m < pj.end:
+        nxt = datetime(m.year + (m.month == 12), m.month % 12 + 1, 1)
+        part = slice_journal(pj, max(m, pj.start), min(nxt, pj.end))
+        row = console_metrics(part, console, targets=targets)
+        row["month"] = f"{m:%Y-%m}"
+        out.append(row)
+        m = nxt
+    return out
+
+
+# end listing

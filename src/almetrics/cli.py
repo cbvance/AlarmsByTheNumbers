@@ -101,9 +101,39 @@ def cmd_parse(args):
 
 
 def cmd_metrics(args):
-    from .metrics import all_consoles
+    from .metrics import all_consoles, by_month
 
     pj, _ = _load(args)
+    if getattr(args, "by", None) == "month":
+        for c in pj.consoles():
+            print(f"\nConsole {c}")
+            rows = [
+                [
+                    r["month"],
+                    f"{r['annunciated']:,}",
+                    f"{r['per_day']:.0f}",
+                    f"{r['per_10min']:.2f}",
+                    r["max_10min"],
+                    f"{r['pct_time_in_flood']:.1f}",
+                    f"{r['top10_pct']:.1f}",
+                ]
+                for r in by_month(pj, c)
+            ]
+            print(
+                _table(
+                    rows,
+                    [
+                        "Month",
+                        "Alarms",
+                        "Per day",
+                        "Per 10m",
+                        "Peak 10m",
+                        "%Flood",
+                        "Top10%",
+                    ],
+                )
+            )
+        return
     ms = all_consoles(pj)
     if args.json:
         Path(args.json).write_text(
@@ -532,6 +562,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     journal_cmd("parse", cmd_parse, "rebuild episodes and report counts")
     p = journal_cmd("metrics", cmd_metrics, "headline metrics per console")
+    p.add_argument("--by", choices=["month"], help="break out by month")
     p.add_argument("--json", type=Path)
     p = journal_cmd("floods", cmd_floods, "flood episodes per console")
     p.add_argument("--top", type=int, default=10)
