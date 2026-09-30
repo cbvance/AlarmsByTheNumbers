@@ -8,7 +8,8 @@ def test_cli_end_to_end(tmp_path, capsys):
         assert main([cmd, str(db), "--site", "redmesa"]) == 0
     assert main(["madb", str(db), "--site", "redmesa", "--out", str(tmp_path / "m.xlsx")]) == 0
     assert main(["charts", str(db), "--site", "redmesa", "--outdir", str(tmp_path / "c")]) == 0
-    assert (tmp_path / "c" / "daily_rate.png").exists()
+    for name in ("daily_rate", "load_by_area", "inventory", "pareto"):
+        assert (tmp_path / "c" / f"{name}.png").exists()
     out = capsys.readouterr().out
     assert "Console" in out and "C1" in out
 

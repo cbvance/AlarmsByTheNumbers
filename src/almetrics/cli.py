@@ -203,6 +203,10 @@ def cmd_charts(args):
         out / "ten_minute_histogram.png"))
     made.append(charts.pareto(bad_actors(pj), out / "pareto.png"))
     made.append(charts.priority_mix(console_metrics(pj)["priority_mix"], out / "priority_mix.png"))
+    made.append(charts.load_by_group(pj, out / "load_by_area.png"))
+    pj_site = _site(getattr(args, "site", None))
+    if pj_site:
+        made.append(charts.inventory(pj_site, out / "inventory.png"))
     for p in made:
         print(p)
 

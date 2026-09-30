@@ -169,3 +169,56 @@ def before_after(rows: list[dict], path, title="Before and after") -> Path:
     ax.set_xlabel("After as percent of before")
     ax.set_title(title)
     return _save(fig, path)
+
+
+def _group(tag: str, level: int) -> str:
+    parts = tag.split("/")
+    return parts[min(level, len(parts)) - 1]
+
+
+# listing: chart_load_by_group
+def load_by_group(pj: ParsedJournal, path, level: int = 2,
+                  title: str = "Share of annunciated alarms by area") -> Path:
+    """Horizontal bars: each group's share of all annunciated alarms.
+
+    Groups are a tag-path level: level 2 of RedMesa/Cryo/V-410/LIT-4101
+    is Cryo. Works on any journal whose tag paths are organized by area.
+    """
+    from collections import Counter
+    from .site import tag_of
+    style()
+    counts = Counter(_group(tag_of(e.source), level) for e in pj.annunciated())
+    total = sum(counts.values()) or 1
+    items = counts.most_common()[::-1]
+    fig, ax = plt.subplots(figsize=SIZE)
+    ax.barh([k for k, _ in items], [100 * v / total for _, v in items],
+            color="#7f7f7f", edgecolor="#000000", lw=0.4)
+    for i, (_, v) in enumerate(items):
+        ax.text(100 * v / total + 0.6, i, f"{v:,}", va="center", fontsize=6.5)
+    ax.set_xlabel("Percent of annunciated alarms")
+    ax.set_title(title)
+    ax.set_xlim(0, max(100 * v / total for _, v in items) * 1.25)
+    return _save(fig, path)
+# end listing
+
+
+def inventory(site, path, title: str = "Configured alarms by area and priority") -> Path:
+    """Stacked bars of a site model's configured alarms, by area and priority."""
+    from collections import Counter
+    from .site import PRIORITY_NAMES
+    style()
+    areas = [a for a, _ in Counter(x.area for x in site.alarms).most_common()][::-1]
+    fills = {1: ("white", ""), 2: ("#bfbfbf", ""), 3: ("#7f7f7f", ""), 4: ("#000000", "")}
+    fig, ax = plt.subplots(figsize=SIZE)
+    left = [0] * len(areas)
+    for p in (1, 2, 3, 4):
+        vals = [sum(1 for x in site.alarms if x.area == a and x.priority == p) for a in areas]
+        ax.barh(areas, vals, left=left, color=fills[p][0], edgecolor="#000000", lw=0.5,
+                label=PRIORITY_NAMES[p])
+        left = [l + v for l, v in zip(left, vals)]
+    for i, total in enumerate(left):
+        ax.text(total + 0.5, i, str(total), va="center", fontsize=6.5)
+    ax.set_xlabel("Configured alarms")
+    ax.set_title(title)
+    ax.legend(frameon=False, loc="lower right")
+    return _save(fig, path)
