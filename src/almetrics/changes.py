@@ -95,6 +95,15 @@ def alarm_json(a, d: Decision) -> dict:
         ),
     }
     assert cfg["priority"] in PRIORITY_VALUE or cfg["priority"] == "No alarm"
+    states = [
+        x.strip()
+        for x in (d.get("Suppress In State") or "").split(",")
+        if x.strip()
+    ]
+    if states:
+        from .states import enabled_binding
+
+        cfg["enabled"] = enabled_binding(states, a.tag.split("/", 1)[0])
     return cfg
 
 
@@ -132,7 +141,14 @@ def write_changes(
     (outdir / "tag_patch.json").write_text(
         json.dumps(tag_patch(site, decisions), indent=2)
     )
+    from .states import state_tags
+
+    root = site.alarms[0].tag.split("/", 1)[0]
+    (outdir / "state_tags.json").write_text(
+        json.dumps(state_tags(site, root), indent=2)
+    )
     return {
         "changes": outdir / "changes.csv",
         "patch": outdir / "tag_patch.json",
+        "states": outdir / "state_tags.json",
     }

@@ -1266,3 +1266,83 @@ def alarms_before_after(
     ax.set_title(title)
     ax.legend(frameon=False, loc="lower right")
     return _save(fig, path)
+
+
+def upset_first_ten(
+    rows: list[tuple[str, float, float]],
+    path,
+    title: str = "First ten minutes after each upset",
+) -> Path:
+    """Median alarms in the first ten minutes after each kind of upset,
+    before and after, against the EEMUA benchmark of fewer than ten."""
+    style()
+    import numpy as np
+
+    names = [r[0] for r in rows]
+    xs = np.arange(len(rows))
+    fig, ax = plt.subplots(figsize=SIZE)
+    ax.bar(
+        xs - 0.2,
+        [r[1] for r in rows],
+        0.4,
+        color="#bfbfbf",
+        edgecolor="#000000",
+        lw=0.4,
+        label="As found",
+    )
+    ax.bar(
+        xs + 0.2,
+        [r[2] for r in rows],
+        0.4,
+        color="#000000",
+        label="Rationalized",
+    )
+    for x, r in zip(xs, rows):
+        ax.text(x - 0.2, r[1] + 0.5, f"{r[1]:g}", ha="center", fontsize=6.5)
+        ax.text(x + 0.2, r[2] + 0.5, f"{r[2]:g}", ha="center", fontsize=6.5)
+    ax.axhline(10, color="#000000", lw=0.6, ls=":")
+    ax.text(-0.45, 10.4, "fewer than 10", ha="left", fontsize=6.5)
+    ax.set_xticks(xs, names, rotation=20, ha="right")
+    ax.set_ylabel("Median alarms in the first 10 minutes")
+    ax.set_title(title)
+    ax.legend(frameon=False, loc="upper left")
+    return _save(fig, path)
+
+
+def upset_compare(
+    before,
+    t_before,
+    after,
+    t_after,
+    console,
+    path,
+    minutes: int = 30,
+    title: str = "One upset, before and after",
+) -> Path:
+    """Alarms per minute on one console after the same kind of upset."""
+    style()
+    fig, axes = plt.subplots(2, 1, figsize=SIZE, sharex=True, sharey=True)
+    for ax, pj, t0, label in (
+        (axes[0], before, t_before, "As found"),
+        (axes[1], after, t_after, "Rationalized"),
+    ):
+        counts = [0] * minutes
+        for e in pj.annunciated():
+            if e.console == console:
+                m = int((e.active - t0).total_seconds() // 60)
+                if 0 <= m < minutes:
+                    counts[m] += 1
+        ax.bar(
+            range(minutes),
+            counts,
+            width=0.85,
+            color="#000000" if label == "Rationalized" else "#7f7f7f",
+        )
+        total10 = sum(counts[:10])
+        ax.set_ylabel("Per minute")
+        ax.set_title(
+            f"{label}, {t0:%d %b %Y}: {total10} in first 10 min", fontsize=8
+        )
+    axes[1].set_xlabel("Minutes after the trip")
+    fig.suptitle(title, fontsize=9)
+    return _save(fig, path)

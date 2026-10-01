@@ -166,3 +166,34 @@ def test_changes_and_patch(pair, tmp_path):  # noqa: F811
     alarms = [a for tags in patch.values() for t in tags for a in t["alarms"]]
     assert len(alarms) == 144
     assert {"timeOnDelaySeconds", "setpointA", "deadband"} <= set(alarms[0])
+    bound = [a for a in alarms if "enabled" in a]
+    assert len(bound) == 43
+    assert bound[0]["enabled"]["bindType"] == "Expression"
+    assert bound[0]["enabled"]["value"].startswith(
+        "!({[default]RedMesa/States/"
+    )
+    states = json.loads(paths["states"].read_text())["RedMesa/States"]
+    assert {t["name"] for t in states} == {
+        "CRYO_BYPASS",
+        "K500A_DOWN",
+        "SLUG",
+        "FOAM",
+        "POWER_DIP",
+    }
+
+
+def test_first_ten_after_rationalization(pair):  # noqa: F811
+    from statistics import median
+
+    from almetrics.states import first_ten
+
+    before, after, _ = pair
+    trip = next(
+        a.source
+        for a in redmesa.build().alarms
+        if a.displaypath == "EC-420 XA-4207 Trip"
+    )
+    b = [n for _, n in first_ten(before, trip, "C2")]
+    a = [n for _, n in first_ten(after, trip, "C2")]
+    if b and a:
+        assert median(a) < 10 <= median(b)
