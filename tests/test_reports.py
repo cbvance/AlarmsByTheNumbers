@@ -147,3 +147,22 @@ def test_madb_drives_the_generator(pair, tmp_path):  # noqa: F811
         generate(s, db, datetime(2026, 8, 1), 15, ALL_FIXES, seed=9)
         out.append(console_metrics(parse_journal(load_events(db))))
     assert out[0] == out[1]
+
+
+def test_changes_and_patch(pair, tmp_path):  # noqa: F811
+    import json
+
+    from almetrics.changes import change_list, write_changes
+    from almetrics.madb import fill_from_site, read_madb
+
+    before, _, _ = pair
+    site = redmesa.build()
+    path = fill_from_site(export_madb(before, tmp_path / "m.xlsx", site), site)
+    decisions, _ = read_madb(path)
+    ch = change_list(site, decisions)
+    assert sum(c.field == "remove" for c in ch) == 5
+    paths = write_changes(site, decisions, tmp_path / "out")
+    patch = json.loads(paths["patch"].read_text())
+    alarms = [a for tags in patch.values() for t in tags for a in t["alarms"]]
+    assert len(alarms) == 144
+    assert {"timeOnDelaySeconds", "setpointA", "deadband"} <= set(alarms[0])

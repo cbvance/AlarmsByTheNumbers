@@ -401,6 +401,44 @@ def cmd_madb_check(args):
     return 1 if problems else 0
 
 
+def cmd_changes(args):
+    from collections import Counter
+
+    from .changes import change_list, write_changes
+    from .madb import read_madb
+
+    site = _site(args.site or "redmesa")
+    decisions, _ = read_madb(args.workbook)
+    paths = write_changes(site, decisions, args.out)
+    kinds = Counter(c.field for c in change_list(site, decisions))
+    print(
+        f"{sum(kinds.values())} changes on"
+        f" {len({(c.tag, c.alarm) for c in change_list(site, decisions)})}"
+        " alarms"
+    )
+    for k, n in kinds.most_common():
+        print(f"  {n:4d}  {k}")
+    for p in paths.values():
+        print(f"wrote {p}")
+
+
+def cmd_delays(args):
+    from .delays import delay_table
+
+    pj, _ = _load(args)
+    eps = [e for e in pj.annunciated() if e.displaypath == args.alarm]
+    if not eps:
+        print(f"no annunciated episodes for {args.alarm!r}")
+        return 1
+    on, off = (0, 5, 10, 15, 30, 60), (0, 10, 30, 60)
+    rows = [
+        [f"{a} s"] + [f"{n:,}" for n in r]
+        for a, r in zip(on, delay_table(eps, pj.end, on, off))
+    ]
+    print(f"{args.alarm}: activations by on-delay (rows), off-delay")
+    print(_table(rows, ["On \\ Off"] + [f"{b} s" for b in off]))
+
+
 def cmd_madb(args):
     from .madb import export_madb
 
@@ -700,6 +738,13 @@ def main(argv: list[str] | None = None) -> int:
     b.add_argument("--root", default=".", help="repo folder to build into")
     b.add_argument("--seed", type=int, default=1843)
     b.set_defaults(fn=cmd_build)
+    ch = sub.add_parser("changes", help="configuration changes from a MADB")
+    ch.add_argument("workbook", type=Path)
+    ch.add_argument("--site", default="redmesa")
+    ch.add_argument("--out", type=Path, default=Path("out/changes"))
+    ch.set_defaults(fn=cmd_changes)
+    p = journal_cmd("delays", cmd_delays, "replay on- and off-delays")
+    p.add_argument("--alarm", required=True, help="display path")
     mc = sub.add_parser("madb-check", help="check a filled MADB workbook")
     mc.add_argument("workbook", type=Path)
     mc.set_defaults(fn=cmd_madb_check)

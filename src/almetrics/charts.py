@@ -1199,3 +1199,70 @@ def priority_shift(
     ax.set_title(title)
     ax.legend(frameon=False)
     return _save(fig, path)
+
+
+def delay_chart(table, on, off, path, title: str = "Delays replayed") -> Path:
+    """Activations against on-delay, one line per off-delay."""
+    style()
+    fig, ax = plt.subplots(figsize=SIZE)
+    for k, b in enumerate(off):
+        ax.plot(
+            on,
+            [row[k] for row in table],
+            color=INK[k % 4],
+            ls=DASH[k % 4],
+            marker="o",
+            ms=3,
+            label=f"off-delay {b} s",
+        )
+    ax.set_yscale("log")
+    ax.set_xlabel("On-delay, seconds")
+    ax.set_ylabel("Activations, six months (log scale)")
+    ax.set_title(title)
+    ax.legend(frameon=False)
+    return _save(fig, path)
+
+
+def alarms_before_after(
+    before: dict,
+    after: dict,
+    names,
+    path,
+    title: str = "Top alarms before and after",
+) -> Path:
+    """Paired bars of annunciated counts per alarm."""
+    style()
+    import numpy as np
+
+    names = list(names)[::-1]
+    ys = np.arange(len(names))
+    fig, ax = plt.subplots(figsize=SIZE)
+    ax.barh(
+        ys + 0.2,
+        [before.get(n, 0) for n in names],
+        0.4,
+        color="#bfbfbf",
+        edgecolor="#000000",
+        lw=0.4,
+        label="As found",
+    )
+    ax.barh(
+        ys - 0.2,
+        [after.get(n, 0) for n in names],
+        0.4,
+        color="#000000",
+        label="After design fixes",
+    )
+    for y, n in zip(ys, names):
+        ax.text(
+            after.get(n, 0),
+            y - 0.2,
+            f" {after.get(n, 0):,}",
+            va="center",
+            fontsize=6,
+        )
+    ax.set_yticks(ys, names)
+    ax.set_xlabel("Annunciated alarms, six months")
+    ax.set_title(title)
+    ax.legend(frameon=False, loc="lower right")
+    return _save(fig, path)

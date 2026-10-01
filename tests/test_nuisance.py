@@ -54,3 +54,17 @@ def test_run_lengths(builder):
         builder.cycle(f"r{i}", SRC, s, s + 1)
     pj = parse_journal(builder.events())
     assert run_lengths(pj.episodes, SRC) == [5.0, 7.0, 3588.0]
+
+
+def test_replay_delays(builder):
+    from almetrics.delays import replay_delays
+
+    # three blips 1 s long, 5 s apart, then one 120 s excursion
+    for i, s in enumerate((0, 6, 12)):
+        builder.cycle(f"b{i}", SRC, s, s + 1)
+    builder.cycle("x", SRC, 1000, 1120)
+    pj = parse_journal(builder.events())
+    eps = pj.episodes
+    assert replay_delays(eps, 0, 0, pj.end) == 4
+    assert replay_delays(eps, 0, 10, pj.end) == 2  # blips held together
+    assert replay_delays(eps, 5, 0, pj.end) == 1  # blips never last 5 s
