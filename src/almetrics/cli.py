@@ -380,6 +380,22 @@ def cmd_check(args):
         print(f"- {line}")
 
 
+def cmd_madb_check(args):
+    from .madb import check_madb, progress, read_madb
+
+    decisions, _ = read_madb(args.workbook)
+    p = progress(decisions)
+    print(
+        f"{args.workbook}: {p['alarms']} alarms, {p['kept']} kept,"
+        f" {p['removed']} removed, {p['open']} not yet rationalized"
+    )
+    problems = check_madb(decisions)
+    print(f"{len(problems)} problem(s)")
+    for line in problems:
+        print(f"  {line}")
+    return 1 if problems else 0
+
+
 def cmd_madb(args):
     from .madb import export_madb
 
@@ -663,6 +679,9 @@ def main(argv: list[str] | None = None) -> int:
     b.add_argument("--root", default=".", help="repo folder to build into")
     b.add_argument("--seed", type=int, default=1843)
     b.set_defaults(fn=cmd_build)
+    mc = sub.add_parser("madb-check", help="check a filled MADB workbook")
+    mc.add_argument("workbook", type=Path)
+    mc.set_defaults(fn=cmd_madb_check)
     st = sub.add_parser("stages", help="apply fixes one kind at a time")
     st.add_argument("--site", default="redmesa")
     st.add_argument("--start", default="2026-01-01")
@@ -683,8 +702,7 @@ def main(argv: list[str] | None = None) -> int:
     c.set_defaults(fn=cmd_compare)
 
     args = ap.parse_args(argv)
-    args.fn(args)
-    return 0
+    return args.fn(args) or 0
 
 
 if __name__ == "__main__":

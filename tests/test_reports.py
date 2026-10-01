@@ -67,3 +67,51 @@ def test_shelve_periods(builder):
     ps = shelve_periods(parse_journal(builder.events()))
     assert [p.activations for p in ps] == [3, 2]
     assert ps[0].minutes == 20.0
+
+
+def fill(path, rows):
+    """Write team fields into an exported MADB, as a rationalizer would."""
+    from openpyxl import load_workbook
+
+    wb = load_workbook(path)
+    ws = wb["MADB"]
+    header = [c.value for c in ws[1]]
+    for r, values in rows.items():
+        for field, v in values.items():
+            ws.cell(r, header.index(field) + 1).value = v
+    wb.save(path)
+
+
+def test_madb_round_trip_and_check(pair, tmp_path):  # noqa: F811
+    from almetrics.madb import check_madb, progress, read_madb
+
+    before, _, _ = pair
+    path = export_madb(before, tmp_path / "m.xlsx", redmesa.build())
+    good = {
+        "Classification": "Process",
+        "Cause": "c",
+        "Consequence": "x",
+        "Corrective Action": "a",
+        "Time to Respond": "3 to 10 min",
+        "Severity": "Major",
+        "Deadband": 3,
+        "Keep or Remove": "Keep",
+        "Rationalized By": "LM",
+    }
+    fill(
+        path,
+        {
+            2: good,
+            3: {**good, "Deadband": None, "Consequence": None},
+            4: {"Keep or Remove": "Remove"},
+        },
+    )
+    decisions, matrix = read_madb(path)
+    assert matrix[("Major", "3 to 10 min")] == "Medium"
+    assert decisions[0].get("Rationalized Priority") == "Medium"
+    p = progress(decisions)
+    assert (p["kept"], p["removed"]) == (2, 1)
+    probs = check_madb(decisions)
+    assert any("row 3" in x and "Consequence is blank" in x for x in probs)
+    assert any("row 4" in x and "no reason" in x for x in probs)
+    assert not any("row 2" in x for x in probs)

@@ -9,6 +9,7 @@ two produce from the site's priority matrix.
 from __future__ import annotations
 
 from collections import Counter, defaultdict
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
@@ -237,3 +238,115 @@ def _validate(ws, col: int, last: int, formula: str) -> None:
     ws.add_data_validation(dv)
     letter = get_column_letter(col)
     dv.add(f"{letter}2:{letter}{last}")
+
+
+# listing: read_madb
+@dataclass
+class Decision:
+    """One MADB row as the rationalization team left it."""
+
+    row: int
+    source: str
+    displaypath: str
+    first_guess: str
+    chattering: bool
+    team: dict[str, object]
+
+    def get(self, field: str):
+        v = self.team.get(field)
+        return None if v in ("", None) else v
+
+
+def read_madb(
+    path: str | Path, provider: str = "default"
+) -> tuple[list[Decision], dict]:
+    """Read a filled MADB back, with the priority matrix it was filled in
+    against. The workbook is the record; this turns it into data."""
+    from openpyxl import load_workbook
+
+    wb = load_workbook(path, data_only=False)
+    ws = wb["MADB"]
+    header = [c.value for c in ws[1]]
+    col = {name: i for i, name in enumerate(header)}
+    m = wb["Matrix"]
+    times = [c.value for c in m[1]][1:]
+    matrix = {
+        (r[0].value, t): r[k + 1].value
+        for r in m.iter_rows(min_row=2)
+        for k, t in enumerate(times)
+    }
+    out = []
+    for i, r in enumerate(ws.iter_rows(min_row=2, values_only=True), 2):
+        if not r[col["Tag"]]:
+            continue
+        team = {f: r[col[f]] for f in TEAM}
+        rp = team["Rationalized Priority"]
+        if isinstance(rp, str) and rp.startswith("="):
+            team["Rationalized Priority"] = matrix.get(
+                (team["Severity"], team["Time to Respond"])
+            )
+        out.append(
+            Decision(
+                i,
+                f"prov:{provider}:/tag:{r[col['Tag']]}:/alm:{r[col['Alarm']]}",
+                r[col["Display Path"]],
+                r[col["First Guess"]] or "",
+                r[col["Chattering"]] == "Y",
+                team,
+            )
+        )
+    return out, matrix
+
+
+# end listing
+
+
+# listing: check_madb
+REQUIRED = [
+    "Classification",
+    "Cause",
+    "Consequence",
+    "Corrective Action",
+    "Time to Respond",
+    "Severity",
+]
+
+
+def check_madb(decisions: list[Decision]) -> list[str]:
+    """Problems a reviewer would catch, found before the review."""
+    problems = []
+    for d in decisions:
+        keep = d.get("Keep or Remove")
+        if keep is None:
+            continue  # not yet rationalized
+        where = f"row {d.row} {d.displaypath}"
+        if keep == "Remove":
+            if not d.get("Notes"):
+                problems.append(f"{where}: removed with no reason in Notes")
+            continue
+        for f in REQUIRED:
+            if d.get(f) is None:
+                problems.append(f"{where}: kept but {f} is blank")
+        if d.get("Classification") == "Not an alarm":
+            problems.append(f"{where}: classified Not an alarm but kept")
+        if d.get("Rationalized Priority") == "No alarm":
+            problems.append(f"{where}: matrix says No alarm but kept")
+        if d.chattering and d.get("Deadband") is None:
+            problems.append(f"{where}: chatters but has no deadband")
+        if not d.get("Rationalized By"):
+            problems.append(f"{where}: no name in Rationalized By")
+    return problems
+
+
+def progress(decisions: list[Decision]) -> dict[str, int]:
+    """How far the team has got: rows decided, kept, removed, open."""
+    keep = [d.get("Keep or Remove") for d in decisions]
+    return {
+        "alarms": len(decisions),
+        "kept": keep.count("Keep"),
+        "removed": keep.count("Remove"),
+        "open": keep.count(None),
+    }
+
+
+# end listing
