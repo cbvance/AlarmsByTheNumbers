@@ -872,3 +872,85 @@ def chatter_profile(
     ax.set_title(title)
     ax.legend(frameon=False, loc="lower right")
     return _save(fig, path)
+
+
+def stale_timeline(
+    pj: ParsedJournal,
+    path,
+    consoles=None,
+    limit: int = 5,
+    title: str = "Stale alarms at each midnight",
+) -> Path:
+    """Stale count at every midnight, per console, against the target."""
+    from .nuisance import stale_by_day
+
+    style()
+    consoles = consoles or pj.consoles()
+    fig, ax = plt.subplots(figsize=SIZE)
+    for i, c in enumerate(consoles):
+        days = stale_by_day(pj, c)
+        ax.step(
+            [d.day for d in days],
+            [len(d.stale) for d in days],
+            where="post",
+            color=INK[i % 4],
+            ls=DASH[i % 4],
+            label=f"Console {c}",
+        )
+    ax.axhline(limit, color="#000000", lw=0.6, ls=":")
+    ax.text(
+        pj.start,
+        limit,
+        f" target: fewer than {limit}",
+        fontsize=6.5,
+        va="bottom",
+    )
+    ax.set_ylim(0, limit + 3)
+    ax.set_ylabel("Alarms active more than 24 h")
+    ax.set_title(title)
+    ax.xaxis.set_major_locator(mdates.MonthLocator())
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%b"))
+    ax.legend(frameon=False, loc="upper right")
+    return _save(fig, path)
+
+
+def stale_gantt(
+    pj: ParsedJournal,
+    path,
+    hours: float = 24.0,
+    title: str = "Alarms active longer than a day",
+) -> Path:
+    """One bar per episode that stayed active longer than `hours`."""
+    style()
+    long = [e for e in pj.annunciated() if e.duration(pj.end) > hours * 3600]
+    names = sorted(
+        {e.displaypath for e in long},
+        key=lambda n: min(e.active for e in long if e.displaypath == n),
+    )
+    fig, ax = plt.subplots(figsize=SIZE)
+    for e in long:
+        y = len(names) - 1 - names.index(e.displaypath)
+        end = e.clear or pj.end
+        ax.barh(
+            y,
+            mdates.date2num(end) - mdates.date2num(e.active),
+            left=mdates.date2num(e.active),
+            height=0.6,
+            color="#7f7f7f" if e.clear else "#000000",
+            edgecolor="#000000",
+            lw=0.4,
+        )
+    ax.set_yticks(range(len(names)), names[::-1])
+    ax.xaxis_date()
+    ax.xaxis.set_major_locator(mdates.MonthLocator())
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%b"))
+    ax.set_title(title)
+    ax.text(
+        1.0,
+        -0.12,
+        "black: still active when the data ends",
+        transform=ax.transAxes,
+        ha="right",
+        fontsize=6.5,
+    )
+    return _save(fig, path)

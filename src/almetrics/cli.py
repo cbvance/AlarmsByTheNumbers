@@ -412,6 +412,8 @@ def cmd_charts(args):
     made.append(charts.flood_sizes(fl, out / "flood_sizes.png"))
     made.append(charts.first_outs(fl, out / "first_outs.png"))
     made.append(charts.chatter_profile(pj, out / "chatter_profile.png"))
+    made.append(charts.stale_timeline(pj, out / "stale_timeline.png"))
+    made.append(charts.stale_gantt(pj, out / "stale_gantt.png"))
     raw = load_events(args.journal)
     made.append(
         charts.rows_per_day(
