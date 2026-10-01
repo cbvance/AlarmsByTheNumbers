@@ -5,6 +5,7 @@ from almetrics.compare import compare
 from almetrics.madb import export_madb
 from almetrics.shelving import shelving_report
 from almetrics.sites import redmesa
+from conftest import SRC
 from test_generator import pair  # noqa: F401  (module fixture)
 
 
@@ -54,3 +55,15 @@ def test_what_if_and_cards(pair, tmp_path):  # noqa: F811
     assert rows[-1]["per_day"] < rows[0]["per_day"] / 2
     a = bad_actors(before, top=1)[0]
     assert actor_card(before, a, tmp_path / "card.png").exists()
+
+
+def test_shelve_periods(builder):
+    from almetrics.episodes import parse_journal
+    from almetrics.shelving import shelve_periods
+
+    for i, s in enumerate((0, 600, 1200, 9000, 9100)):
+        builder.cycle(f"s{i}", SRC, s, s + 5, shelved=True)
+    builder.cycle("x", SRC, 20000, 20005)
+    ps = shelve_periods(parse_journal(builder.events()))
+    assert [p.activations for p in ps] == [3, 2]
+    assert ps[0].minutes == 20.0

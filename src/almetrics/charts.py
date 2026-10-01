@@ -789,7 +789,12 @@ def activation_raster(
     for e in eps:
         h = e.active.hour
         m = e.active.minute + e.active.second / 60
-        ax.plot([m, m], [h - 0.4, h + 0.4], color="#000000", lw=0.5)
+        ax.plot(
+            [m, m],
+            [h - 0.4, h + 0.4],
+            lw=0.5,
+            color="#a0a0a0" if e.shelved else "#000000",
+        )
     ax.set_ylim(24, -1)
     ax.set_xlim(0, 60)
     ax.set_yticks(range(0, 24, 2))
@@ -1068,3 +1073,78 @@ def actor_card(pj: ParsedJournal, actor, path) -> Path:
 
 
 # end listing
+
+
+def shelving_chart(
+    pj: ParsedJournal, path, title: str = "Activations while shelved"
+) -> Path:
+    """Per alarm: activations shown to the operator and while shelved."""
+    from collections import Counter
+
+    style()
+    shelved = Counter(e.displaypath for e in pj.episodes if e.shelved)
+    shown = Counter(e.displaypath for e in pj.annunciated())
+    names = [n for n, _ in shelved.most_common()][::-1]
+    fig, ax = plt.subplots(figsize=SIZE)
+    ax.barh(
+        names,
+        [shown[n] for n in names],
+        color="#bfbfbf",
+        edgecolor="#000000",
+        lw=0.4,
+        label="Shown to the operator",
+    )
+    ax.barh(
+        names,
+        [shelved[n] for n in names],
+        left=[shown[n] for n in names],
+        color="#000000",
+        label="While shelved",
+    )
+    for i, n in enumerate(names):
+        tot = shown[n] + shelved[n]
+        ax.text(
+            tot,
+            i,
+            f" {100 * shelved[n] / tot:.1f}%",
+            va="center",
+            fontsize=6.5,
+        )
+    ax.set_xlabel("Activations, six months")
+    ax.set_title(title)
+    ax.legend(frameon=False, loc="lower right")
+    return _save(fig, path)
+
+
+def disabled_gantt(
+    pj: ParsedJournal, start, hours: float, path, title: str | None = None
+) -> Path:
+    """Enable/disable spans for every alarm toggled in a window."""
+    from datetime import timedelta as td
+
+    from .shelving import shelving_report
+
+    style()
+    end = start + td(hours=hours)
+    spans = [
+        s
+        for s in shelving_report(pj).disabled_spans
+        if s.start < end and (s.end or pj.end) > start
+    ]
+    spans.sort(key=lambda s: s.start)
+    fig, ax = plt.subplots(figsize=SIZE)
+    for i, s in enumerate(spans[::-1]):
+        a = max(s.start, start)
+        b = min(s.end or pj.end, end)
+        ax.barh(
+            i,
+            (b - a).total_seconds() / 60,
+            left=(a - start).total_seconds() / 60,
+            color="#7f7f7f",
+            edgecolor="#000000",
+            lw=0.4,
+        )
+    ax.set_yticks(range(len(spans)), [s.displaypath for s in spans[::-1]])
+    ax.set_xlabel(f"Minutes after {start:%d %b %Y %H:%M}")
+    ax.set_title(title or "Alarms disabled by state")
+    return _save(fig, path)

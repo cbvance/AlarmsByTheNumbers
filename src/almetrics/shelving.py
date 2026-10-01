@@ -103,3 +103,46 @@ def long_disabled(
     rep: ShelvingReport, data_end: datetime, hours: float = 24.0
 ):
     return [s for s in rep.disabled_spans if s.hours(data_end) > hours]
+
+
+# listing: shelve_periods
+@dataclass
+class ShelvePeriod:
+    displaypath: str
+    first: datetime  # first activation seen while shelved
+    last: datetime  # last activation seen while shelved
+    activations: int
+
+    @property
+    def minutes(self) -> float:
+        return (self.last - self.first).total_seconds() / 60
+
+
+def shelve_periods(pj: ParsedJournal, gap_min: float = 30.0):
+    """Group each alarm's shelved activations into periods.
+
+    The journal does not record the act of shelving, only activations that
+    happened while shelved. Activations closer together than gap_min belong
+    to one period. A period's span is a lower bound on how long the alarm
+    was shelved: it was shelved before the first and after the last.
+    """
+    out = []
+    by = defaultdict(list)
+    for e in pj.episodes:
+        if e.shelved:
+            by[e.displaypath].append(e.active)
+    for name, times in by.items():
+        times.sort()
+        start = prev = times[0]
+        n = 1
+        for t in times[1:]:
+            if (t - prev).total_seconds() > gap_min * 60:
+                out.append(ShelvePeriod(name, start, prev, n))
+                start, n = t, 0
+            prev = t
+            n += 1
+        out.append(ShelvePeriod(name, start, prev, n))
+    return sorted(out, key=lambda p: p.first)
+
+
+# end listing

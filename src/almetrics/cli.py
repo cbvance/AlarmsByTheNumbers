@@ -344,18 +344,29 @@ def cmd_badactors(args):
 
 
 def cmd_shelving(args):
-    from .shelving import long_disabled, shelving_report
+    import textwrap
+    from statistics import median
+
+    from .shelving import long_disabled, shelve_periods, shelving_report
 
     pj, _ = _load(args)
     rep = shelving_report(pj)
     for w in rep.warnings:
-        print(f"WARNING: {w}")
+        print(textwrap.fill(f"WARNING: {w}", 79, subsequent_indent="  "))
     print(f"Shelved activations: {rep.shelved_activations:,}")
     for name, n, share in rep.shelved_by_alarm[:10]:
-        print(f"  {n:6d}  {100 * share:5.1f}% of its activations  {name}")
+        print(f"  {n:6,}  {100 * share:5.1f}% of its activations  {name}")
+    periods = shelve_periods(pj)
+    if periods:
+        mins = [p.minutes for p in periods]
+        print(
+            f"Shelve periods seen: {len(periods)}, median span "
+            f"{median(mins):.0f} min, longest {max(mins):.0f} min"
+        )
     print(
-        f"Disabled spans: {len(rep.disabled_spans)}; look state-based: {rep.state_events}; "
-        f"still disabled at end: {len(rep.still_disabled)}"
+        f"Disabled spans: {len(rep.disabled_spans)};"
+        f" look state-based: {rep.state_events};"
+        f" still disabled: {len(rep.still_disabled)}"
     )
     for s in long_disabled(rep, pj.end)[:10]:
         print(f"  {s.hours(pj.end):7.1f} h disabled  {s.displaypath}")
@@ -444,6 +455,8 @@ def cmd_charts(args):
     made.append(charts.chatter_profile(pj, out / "chatter_profile.png"))
     made.append(charts.stale_timeline(pj, out / "stale_timeline.png"))
     made.append(charts.stale_gantt(pj, out / "stale_gantt.png"))
+    if any(e.shelved for e in pj.episodes):
+        made.append(charts.shelving_chart(pj, out / "shelving.png"))
     raw = load_events(args.journal)
     made.append(
         charts.rows_per_day(
