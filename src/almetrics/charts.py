@@ -662,7 +662,7 @@ def monthly_trend(
     top.text(0, 2, " 2 per 10 min", fontsize=6.5, va="bottom")
     top.set_ylabel("Average per 10 min")
     top.set_ylim(0, None)
-    top.legend(frameon=False, loc="lower right")
+    top.legend(frameon=False, loc="best")
     top.set_title(title)
     bot.axhline(1, color="#000000", lw=0.6, ls=":")
     bot.text(0, 1, " 1% target", fontsize=6.5, va="bottom")

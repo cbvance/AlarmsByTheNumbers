@@ -475,16 +475,25 @@ def cmd_compare(args):
                         f"{r['after']:.1f}",
                         f"{r['change_pct']:+.0f}%",
                         r["target"],
+                        (
+                            ""
+                            if r["met"] is None
+                            else ("yes" if r["met"] else "no")
+                        ),
                     ]
                     for r in rows
                 ],
-                ["Metric", "Before", "After", "Change", "Target"],
+                ["Metric", "Before", "After", "Change", "Target", "Met"],
             )
         )
         if args.chart and c is None:
             from .charts import before_after
 
             print(f"chart: {before_after(rows, args.chart)}")
+    if getattr(args, "report", None):
+        from .compare import field_report
+
+        print(f"\nreport: {field_report(b, a, args.report)}")
 
 
 def cmd_charts(args):
@@ -609,6 +618,7 @@ def cmd_build(args):
                 site="redmesa",
                 consoles=None,
                 chart=out / "before_after.png",
+                report=out / "report",
             ),
         ),
     ]
@@ -765,6 +775,7 @@ def main(argv: list[str] | None = None) -> int:
     c.add_argument("--site")
     c.add_argument("--consoles", type=Path)
     c.add_argument("--chart", type=Path)
+    c.add_argument("--report", type=Path, help="folder for report.md")
     c.set_defaults(fn=cmd_compare)
 
     args = ap.parse_args(argv)

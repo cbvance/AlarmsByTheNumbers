@@ -197,3 +197,17 @@ def test_first_ten_after_rationalization(pair):  # noqa: F811
     a = [n for _, n in first_ten(after, trip, "C2")]
     if b and a:
         assert median(a) < 10 <= median(b)
+
+
+def test_targets_and_field_report(pair, tmp_path):  # noqa: F811
+    from almetrics.compare import compare, field_report
+
+    before, after, _ = pair
+    rows = {r["metric"]: r for r in compare(before, after)}
+    flood = rows["Time in flood (%)"]
+    assert flood["met"] and not flood["met_before"]
+    assert rows["Annunciated per day"]["met"] is None
+    path = field_report(before, after, tmp_path / "rep")
+    text = path.read_text()
+    assert "| Time in flood (%) |" in text
+    assert (tmp_path / "rep" / "monthly.png").exists()
