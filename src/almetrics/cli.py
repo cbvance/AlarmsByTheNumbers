@@ -70,6 +70,11 @@ def cmd_generate(args):
 
     site = _site(args.site or "redmesa")
     fixes = tuple(f for f in args.fixes.split(",") if f) if args.fixes else ()
+    if getattr(args, "madb", None):
+        from .madb import read_madb, site_from_madb
+
+        site = site_from_madb(site, read_madb(args.madb)[0])
+        print(f"rationalization taken from {args.madb}")
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)
     s = generate(
         site,
@@ -400,7 +405,13 @@ def cmd_madb(args):
     from .madb import export_madb
 
     pj, site = _load(args)
-    print(f"wrote {export_madb(pj, args.out, site, str(args.journal))}")
+    path = export_madb(pj, args.out, site, str(args.journal))
+    if args.decided:
+        from .madb import fill_from_site
+
+        fill_from_site(path, site)
+        print("filled with the site model's rationalization decisions")
+    print(f"wrote {path}")
 
 
 def cmd_compare(args):
@@ -549,7 +560,7 @@ def cmd_build(args):
             ),
         ),
         ("shelving", cmd_shelving, NS(**j)),
-        ("madb", cmd_madb, NS(**j, out=out / "madb.xlsx")),
+        ("madb", cmd_madb, NS(**j, out=out / "madb.xlsx", decided=False)),
         ("charts", cmd_charts, NS(**j, outdir=out / "charts")),
         (
             "compare",
@@ -643,6 +654,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     g.add_argument("--seed", type=int, default=1843)
     g.add_argument("--site", default="redmesa")
+    g.add_argument(
+        "--madb",
+        type=Path,
+        help="take rationalized settings from a filled MADB",
+    )
     g.set_defaults(fn=cmd_generate)
 
     journal_cmd(
@@ -673,6 +689,11 @@ def main(argv: list[str] | None = None) -> int:
     journal_cmd("shelving", cmd_shelving, "shelving and suppression analysis")
     p = journal_cmd("madb", cmd_madb, "export the MADB workbook")
     p.add_argument("--out", type=Path, default=Path("out/madb.xlsx"))
+    p.add_argument(
+        "--decided",
+        action="store_true",
+        help="fill in the site model's decisions (Red Mesa)",
+    )
     p = journal_cmd("charts", cmd_charts, "standard chart set")
     p.add_argument("--outdir", type=Path, default=Path("out/charts"))
     b = sub.add_parser("build", help="generate both journals and every report")

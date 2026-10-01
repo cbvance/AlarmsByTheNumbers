@@ -350,3 +350,139 @@ def progress(decisions: list[Decision]) -> dict[str, int]:
 
 
 # end listing
+
+
+# The (severity, time to respond) answer that produces each priority on the
+# example matrix, used to write a completed MADB from a site model.
+ANSWER = {
+    1: ("Major", "10 to 30 min"),
+    2: ("Major", "3 to 10 min"),
+    3: ("Severe", "3 to 10 min"),
+}
+PRIORITY_VALUE = {"Low": 1, "Medium": 2, "High": 3, "Critical": 4}
+
+
+def _rationale(a) -> dict[str, str]:
+    """Templated cause, consequence, and action for the synthetic plant.
+
+    A real team writes these in the session; Red Mesa's are generated so the
+    completed workbook can round-trip through the tools."""
+    d, tag = a.description, a.tag.rsplit("/", 1)[-1]
+    if a.name in ("H", "HH", "L", "LL"):
+        way = "high" if a.name.startswith("H") else "low"
+        return {
+            "Cause": f"{d} {way}, past {a.setpoint:g} {a.units}",
+            "Consequence": f"{d} out of range; equipment or product "
+            f"at risk if it continues",
+            "Corrective Action": f"Check {tag} trend and the loop "
+            f"controlling it; correct the cause",
+        }
+    return {
+        "Cause": f"{d}: {a.name.lower()}",
+        "Consequence": "Loss of the equipment's function",
+        "Corrective Action": f"Confirm {a.name.lower()} in the field; "
+        f"start the spare or follow the procedure",
+    }
+
+
+# listing: madb_round_trip
+def fill_from_site(
+    path: str | Path,
+    site: Site,
+    by: str = "LM, CO, PS",
+    date: str = "2026-07-14",
+) -> Path:
+    """Write the site model's rationalization decisions into an exported
+    MADB, as the team would after its sessions."""
+    from openpyxl import load_workbook
+
+    wb = load_workbook(path)
+    ws = wb["MADB"]
+    header = [c.value for c in ws[1]]
+    col = {name: i + 1 for i, name in enumerate(header)}
+    by_disp = {a.displaypath: a for a in site.alarms}
+    for r in range(2, ws.max_row + 1):
+        a = by_disp.get(ws.cell(r, col["Display Path"]).value)
+        if a is None:
+            continue
+        put = lambda f, v: ws.cell(r, col[f], v)  # noqa: E731
+        put("Rationalized By", by)
+        put("Date", date)
+        if a.rat.remove:
+            put("Classification", "Not an alarm")
+            put("Keep or Remove", "Remove")
+            put(
+                "Notes",
+                "Equipment status, not an abnormal condition "
+                "needing a response; show on the graphic",
+            )
+            continue
+        for f, v in _rationale(a).items():
+            put(f, v)
+        put(
+            "Classification",
+            (
+                "Equipment"
+                if a.name in ("Trip", "Fail", "Flame Fail")
+                else "Process"
+            ),
+        )
+        sev, time = ANSWER.get(a.rat.priority or a.priority, ANSWER[3])
+        put("Severity", sev)
+        put("Time to Respond", time)
+        moved = a.rat.rate is not None
+        step = 0.05 * abs(a.setpoint) or 1.0
+        put(
+            "Setpoint",
+            (
+                a.setpoint + (step if a.name.startswith("H") else -step)
+                if moved
+                else a.setpoint
+            ),
+        )
+        for f, v in (
+            ("Deadband", a.rat.deadband),
+            ("On Delay (s)", a.rat.on_delay),
+            ("Off Delay (s)", a.rat.off_delay),
+        ):
+            put(f, v or None)
+        put("Suppress In State", ", ".join(a.rat.suppress_in) or None)
+        put("Keep or Remove", "Keep")
+    wb.save(path)
+    return Path(path)
+
+
+def site_from_madb(site: Site, decisions: list[Decision]) -> Site:
+    """The site with every alarm's rationalized configuration taken from
+    the MADB, so the generator applies what the team decided."""
+    from dataclasses import replace
+
+    from .site import Rationalized
+
+    by_disp = {d.displaypath: d for d in decisions}
+    alarms = []
+    for a in site.alarms:
+        d = by_disp.get(a.displaypath)
+        if d is None or d.get("Keep or Remove") is None:
+            alarms.append(a)
+            continue
+        sp = d.get("Setpoint")
+        moved = sp is not None and float(sp) != a.setpoint
+        rp = d.get("Rationalized Priority")
+        states = d.get("Suppress In State") or ""
+        rat = Rationalized(
+            priority=PRIORITY_VALUE.get(rp) if rp else None,
+            deadband=float(d.get("Deadband") or 0.0),
+            on_delay=float(d.get("On Delay (s)") or 0.0),
+            off_delay=float(d.get("Off Delay (s)") or 0.0),
+            remove=d.get("Keep or Remove") == "Remove",
+            rate=a.rat.rate if moved else None,
+            suppress_in=tuple(
+                s.strip() for s in states.split(",") if s.strip()
+            ),
+        )
+        alarms.append(replace(a, rat=rat))
+    return replace(site, alarms=alarms)
+
+
+# end listing

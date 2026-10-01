@@ -1148,3 +1148,54 @@ def disabled_gantt(
     ax.set_xlabel(f"Minutes after {start:%d %b %Y %H:%M}")
     ax.set_title(title or "Alarms disabled by state")
     return _save(fig, path)
+
+
+def priority_shift(
+    site,
+    decisions,
+    path,
+    title: str = "Configured priorities, before and after",
+) -> Path:
+    """Configured alarms by priority as found and as rationalized."""
+    from collections import Counter
+
+    from .site import PRIORITY_NAMES
+
+    style()
+    names = ["Low", "Medium", "High", "Critical", "Removed"]
+    before = Counter(PRIORITY_NAMES[a.priority] for a in site.alarms)
+    after = Counter(
+        (
+            "Removed"
+            if d.get("Keep or Remove") == "Remove"
+            else d.get("Rationalized Priority")
+        )
+        for d in decisions
+        if d.get("Keep or Remove")
+    )
+    import numpy as np
+
+    xs = np.arange(len(names))
+    fig, ax = plt.subplots(figsize=SIZE)
+    for k, (lab, c, fill) in enumerate(
+        (("As found", before, "#bfbfbf"), ("Rationalized", after, "#000000"))
+    ):
+        vals = [c.get(n, 0) for n in names]
+        ax.bar(
+            xs + (k - 0.5) * 0.38,
+            vals,
+            0.38,
+            color=fill,
+            edgecolor="#000000",
+            lw=0.4,
+            label=lab,
+        )
+        for x, v in zip(xs, vals):
+            ax.text(
+                x + (k - 0.5) * 0.38, v + 1, str(v), ha="center", fontsize=6.5
+            )
+    ax.set_xticks(xs, names)
+    ax.set_ylabel("Configured alarms")
+    ax.set_title(title)
+    ax.legend(frameon=False)
+    return _save(fig, path)

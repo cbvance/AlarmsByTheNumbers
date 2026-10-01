@@ -115,3 +115,35 @@ def test_madb_round_trip_and_check(pair, tmp_path):  # noqa: F811
     assert any("row 3" in x and "Consequence is blank" in x for x in probs)
     assert any("row 4" in x and "no reason" in x for x in probs)
     assert not any("row 2" in x for x in probs)
+
+
+def test_madb_drives_the_generator(pair, tmp_path):  # noqa: F811
+    """A completed MADB, read back, generates the same rationalized plant
+    as the site model it was written from."""
+    from datetime import datetime
+
+    from almetrics.episodes import parse_journal
+    from almetrics.generator import ALL_FIXES, generate
+    from almetrics.journal import load_events
+    from almetrics.madb import (
+        check_madb,
+        fill_from_site,
+        progress,
+        read_madb,
+        site_from_madb,
+    )
+    from almetrics.metrics import console_metrics
+
+    before, _, _ = pair
+    site = redmesa.build()
+    path = fill_from_site(export_madb(before, tmp_path / "m.xlsx", site), site)
+    decisions, _ = read_madb(path)
+    assert progress(decisions)["open"] == 0
+    assert check_madb(decisions) == []
+    m_site = site_from_madb(site, decisions)
+    out = []
+    for s in (site, m_site):
+        db = tmp_path / f"g{len(out)}.db"
+        generate(s, db, datetime(2026, 8, 1), 15, ALL_FIXES, seed=9)
+        out.append(console_metrics(parse_journal(load_events(db))))
+    assert out[0] == out[1]
