@@ -74,6 +74,20 @@ def chatterers(
     }
 
 
+# listing: run_lengths
+def run_lengths(episodes: list[Episode], source: str) -> list[float]:
+    """Seconds between successive activations of one alarm.
+
+    A chattering alarm has most of its run lengths in seconds; an
+    ordinary alarm has them in hours or days.
+    """
+    times = sorted(e.active for e in episodes if e.source == source)
+    return [(b - a).total_seconds() for a, b in zip(times, times[1:])]
+
+
+# end listing
+
+
 # listing: find_fleeting
 def find_fleeting(
     episodes: list[Episode],

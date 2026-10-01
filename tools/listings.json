@@ -32,8 +32,8 @@
  "chart_durations": {
   "file": "src/almetrics/charts.py",
   "start": 545,
-  "end": 568,
-  "code": "def duration_histogram(\n    pj: ParsedJournal, path, title: str = \"How long alarms stay active\"\n) -> Path:\n    \"\"\"Time from active to clear, on a log scale of bins.\"\"\"\n    style()\n    edges = [0, 1, 5, 10, 60, 600, 3600, 86400, 1e12]\n    labels = [\n        \"<1 s\",\n        \"1-5 s\",\n        \"5-10 s\",\n        \"10-60 s\",\n        \"1-10 min\",\n        \"10-60 min\",\n        \"1-24 h\",\n        \">24 h\",\n    ]\n    vals = [e.duration(pj.end) for e in pj.annunciated() if e.clear]\n    fig, ax = plt.subplots(figsize=SIZE)\n    _log_hist(ax, vals, edges, labels)\n    ax.set_xticks(range(len(labels)), labels, rotation=40, ha=\"right\")\n    ax.set_title(title)\n    return _save(fig, path)"
+  "end": 575,
+  "code": "def duration_histogram(\n    pj: ParsedJournal,\n    path,\n    title: str = \"How long alarms stay active\",\n    sources: set[str] | None = None,\n) -> Path:\n    \"\"\"Time from active to clear, on a log scale of bins.\"\"\"\n    style()\n    edges = [0, 1, 5, 10, 60, 600, 3600, 86400, 1e12]\n    labels = [\n        \"<1 s\",\n        \"1-5 s\",\n        \"5-10 s\",\n        \"10-60 s\",\n        \"1-10 min\",\n        \"10-60 min\",\n        \"1-24 h\",\n        \">24 h\",\n    ]\n    vals = [\n        e.duration(pj.end)\n        for e in pj.annunciated()\n        if e.clear and (sources is None or e.source in sources)\n    ]\n    fig, ax = plt.subplots(figsize=SIZE)\n    _log_hist(ax, vals, edges, labels)\n    ax.set_xticks(range(len(labels)), labels, rotation=40, ha=\"right\")\n    ax.set_title(title)\n    return _save(fig, path)"
  },
  "check_journal": {
   "file": "src/almetrics/check.py",
@@ -43,8 +43,8 @@
  },
  "cmd_build": {
   "file": "src/almetrics/cli.py",
-  "start": 433,
-  "end": 508,
+  "start": 435,
+  "end": 510,
   "code": "def cmd_build(args):\n    \"\"\"Generate both Red Mesa journals and every report the book uses.\"\"\"\n    import contextlib\n    from types import SimpleNamespace as NS\n\n    root = Path(args.root)\n    data, out = root / \"data\", root / \"out\"\n    out.mkdir(parents=True, exist_ok=True)\n    before, after = data / \"redmesa_before.db\", data / \"redmesa_after.db\"\n    steps = [\n        (\n            \"generate before\",\n            cmd_generate,\n            NS(\n                site=\"redmesa\",\n                out=before,\n                start=\"2026-01-01\",\n                days=181,\n                fixes=\"\",\n                seed=args.seed,\n            ),\n        ),\n        (\n            \"generate after\",\n            cmd_generate,\n            NS(\n                site=\"redmesa\",\n                out=after,\n                start=\"2026-08-01\",\n                days=91,\n                fixes=\"all\",\n                seed=args.seed,\n            ),\n        ),\n    ]\n    j = dict(journal=before, site=\"redmesa\", consoles=None)\n    reports = [\n        (\"check\", cmd_check, NS(**j)),\n        (\"parse\", cmd_parse, NS(**j)),\n        (\"metrics\", cmd_metrics, NS(**j, json=out / \"metrics.json\")),\n        (\"floods\", cmd_floods, NS(**j, top=10)),\n        (\"chatter\", cmd_chatter, NS(**j, count=3, window=60.0, fleeting=5.0)),\n        (\"stale\", cmd_stale, NS(**j, hours=24.0)),\n        (\n            \"badactors\",\n            cmd_badactors,\n            NS(**j, top=10, console=None, chart=out / \"pareto.png\"),\n        ),\n        (\"shelving\", cmd_shelving, NS(**j)),\n        (\"madb\", cmd_madb, NS(**j, out=out / \"madb.xlsx\")),\n        (\"charts\", cmd_charts, NS(**j, outdir=out / \"charts\")),\n        (\n            \"compare\",\n            cmd_compare,\n            NS(\n                before=before,\n                after=after,\n                site=\"redmesa\",\n                consoles=None,\n                chart=out / \"before_after.png\",\n            ),\n        ),\n    ]\n    for name, fn, ns in steps:\n        print(f\"[build] {name}\")\n        fn(ns)\n    for name, fn, ns in reports:\n        print(f\"[build] {name} -> out/{name}.txt\")\n        with (\n            open(out / f\"{name}.txt\", \"w\", encoding=\"utf-8\") as f,\n            contextlib.redirect_stdout(f),\n        ):\n            fn(ns)\n    print(f\"[build] done: {data} and {out}\")"
  },
  "compare": {
@@ -149,16 +149,22 @@
   "end": 62,
   "code": "def find_chattering(\n    episodes: list[Episode], count: int = 3, window_s: float = 60.0\n) -> dict[str, ChatterStat]:\n    \"\"\"Alarms that went active `count` or more times within `window_s`.\n\n    Returns only the chattering alarms, keyed by source. A burst is a run\n    of activations each within window_s of the one `count - 1` before it.\n    \"\"\"\n    by_src: dict[str, list[Episode]] = defaultdict(list)\n    for e in episodes:\n        by_src[e.source].append(e)\n    out: dict[str, ChatterStat] = {}\n    for src, eps in by_src.items():\n        times = [e.active for e in eps]\n        stat = ChatterStat(src, eps[0].displaypath, eps[0].console, len(times))\n        in_burst = [False] * len(times)\n        lo = 0\n        for hi in range(len(times)):\n            while (times[hi] - times[lo]).total_seconds() > window_s:\n                lo += 1\n            n = hi - lo + 1\n            stat.max_in_window = max(stat.max_in_window, n)\n            if n >= count:\n                if not any(in_burst[lo:hi]):\n                    stat.bursts += 1\n                for k in range(lo, hi + 1):\n                    in_burst[k] = True\n        stat.in_bursts = sum(in_burst)\n        if stat.bursts:\n            out[src] = stat\n    return out"
  },
- "find_fleeting": {
+ "run_lengths": {
   "file": "src/almetrics/nuisance.py",
   "start": 78,
-  "end": 97,
+  "end": 87,
+  "code": "def run_lengths(episodes: list[Episode], source: str) -> list[float]:\n    \"\"\"Seconds between successive activations of one alarm.\n\n    A chattering alarm has most of its run lengths in seconds; an\n    ordinary alarm has them in hours or days.\n    \"\"\"\n    times = sorted(e.active for e in episodes if e.source == source)\n    return [(b - a).total_seconds() for a, b in zip(times, times[1:])]"
+ },
+ "find_fleeting": {
+  "file": "src/almetrics/nuisance.py",
+  "start": 92,
+  "end": 111,
   "code": "def find_fleeting(\n    episodes: list[Episode],\n    max_s: float = 5.0,\n    exclude: set[str] | None = None,\n) -> dict[str, int]:\n    \"\"\"Count activations that cleared within max_s, by source.\n\n    Pass chatterers(...) as `exclude` so an alarm that mostly chatters is\n    reported under one heading, not both.\n    \"\"\"\n    exclude = exclude or set()\n    out: dict[str, int] = defaultdict(int)\n    for e in episodes:\n        if e.source in exclude or e.clear is None:\n            continue\n        if (e.clear - e.active).total_seconds() <= max_s:\n            out[e.source] += 1\n    return dict(out)"
  },
  "stale_by_day": {
   "file": "src/almetrics/nuisance.py",
-  "start": 109,
-  "end": 146,
+  "start": 123,
+  "end": 160,
   "code": "def stale_by_day(\n    pj: ParsedJournal, console: str | None = None, stale_h: float = 24.0\n) -> list[StaleDay]:\n    \"\"\"Snapshot at each midnight: which alarms were stale, which standing.\n\n    Stale: active for more than stale_h at the snapshot.\n    Standing: active and already acknowledged at the snapshot.\n    Episodes that were active before the data starts cannot be seen; the\n    first stale_h of the window undercounts, and the report says so.\n    \"\"\"\n    eps = [\n        e for e in pj.annunciated() if console is None or e.console == console\n    ]\n    # only episodes that span a midnight can appear in a snapshot\n    eps = [\n        e for e in eps if e.clear is None or e.clear.date() > e.active.date()\n    ]\n    day0 = datetime(pj.start.year, pj.start.month, pj.start.day) + timedelta(\n        days=1\n    )\n    out = []\n    d = day0\n    while d <= pj.end:\n        snap = StaleDay(d)\n        for e in eps:\n            if e.active > d:\n                break\n            if e.clear is not None and e.clear <= d:\n                continue\n            if (d - e.active).total_seconds() > stale_h * 3600:\n                snap.stale.append(e)\n            if e.ack is not None and e.ack <= d:\n                snap.standing.append(e)\n        out.append(snap)\n        d += timedelta(days=1)\n    return out"
  },
  "shelving_report": {

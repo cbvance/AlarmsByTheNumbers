@@ -543,7 +543,10 @@ def _log_hist(ax, values, edges, labels):
 
 # listing: chart_durations
 def duration_histogram(
-    pj: ParsedJournal, path, title: str = "How long alarms stay active"
+    pj: ParsedJournal,
+    path,
+    title: str = "How long alarms stay active",
+    sources: set[str] | None = None,
 ) -> Path:
     """Time from active to clear, on a log scale of bins."""
     style()
@@ -558,7 +561,11 @@ def duration_histogram(
         "1-24 h",
         ">24 h",
     ]
-    vals = [e.duration(pj.end) for e in pj.annunciated() if e.clear]
+    vals = [
+        e.duration(pj.end)
+        for e in pj.annunciated()
+        if e.clear and (sources is None or e.source in sources)
+    ]
     fig, ax = plt.subplots(figsize=SIZE)
     _log_hist(ax, vals, edges, labels)
     ax.set_xticks(range(len(labels)), labels, rotation=40, ha="right")
@@ -765,4 +772,103 @@ def first_outs(
         ax.text(v + 0.3, i, str(v), va="center", fontsize=6.5)
     ax.set_xlabel("Floods started")
     ax.set_title(title)
+    return _save(fig, path)
+
+
+def activation_raster(
+    pj: ParsedJournal, source: str, day, path, title: str | None = None
+) -> Path:
+    """Every activation of one alarm on one day, as a tick per activation,
+    one row per hour."""
+    style()
+    eps = [
+        e for e in pj.episodes if e.source == source and e.active.date() == day
+    ]
+    fig, ax = plt.subplots(figsize=SIZE)
+    for e in eps:
+        h = e.active.hour
+        m = e.active.minute + e.active.second / 60
+        ax.plot([m, m], [h - 0.4, h + 0.4], color="#000000", lw=0.5)
+    ax.set_ylim(24, -1)
+    ax.set_xlim(0, 60)
+    ax.set_yticks(range(0, 24, 2))
+    ax.set_ylabel("Hour of day")
+    ax.set_xlabel("Minute within the hour")
+    name = eps[0].displaypath if eps else source
+    ax.set_title(title or f"{name}, {day:%d %b %Y}: {len(eps)} activations")
+    return _save(fig, path)
+
+
+def run_length_chart(
+    pj: ParsedJournal,
+    sources: list[str],
+    path,
+    title: str = "Time between activations",
+) -> Path:
+    """Share of each alarm's run lengths in log-spaced bins."""
+    from .nuisance import run_lengths
+
+    style()
+    edges = [0, 10, 60, 600, 3600, 86400, 1e12]
+    labels = ["<10 s", "10-60 s", "1-10 min", "10-60 min", "1-24 h", ">1 day"]
+    import numpy as np
+
+    xs = np.arange(len(labels))
+    fig, ax = plt.subplots(figsize=SIZE)
+    w = 0.8 / len(sources)
+    eps = pj.annunciated()
+    for k, src in enumerate(sources):
+        rl = run_lengths(eps, src)
+        n = len(rl) or 1
+        bins = [
+            sum(1 for r in rl if edges[i] <= r < edges[i + 1])
+            for i in range(len(labels))
+        ]
+        name = next((e.displaypath for e in eps if e.source == src), src)
+        ax.bar(
+            xs + (k - (len(sources) - 1) / 2) * w,
+            [100 * b / n for b in bins],
+            w,
+            color=INK[k % 4],
+            edgecolor="#000000",
+            lw=0.4,
+            label=name,
+        )
+    ax.set_xticks(xs, labels, rotation=40, ha="right")
+    ax.set_ylabel("Percent of the alarm's run lengths")
+    ax.set_title(title)
+    ax.legend(frameon=False)
+    return _save(fig, path)
+
+
+def chatter_profile(
+    pj: ParsedJournal, path, title: str = "Chattering alarms"
+) -> Path:
+    """For each chattering alarm: activations inside and outside bursts."""
+    from .nuisance import find_chattering
+
+    style()
+    ch = sorted(
+        find_chattering(pj.annunciated()).values(), key=lambda s: s.activations
+    )
+    names = [s.displaypath for s in ch]
+    fig, ax = plt.subplots(figsize=SIZE)
+    ax.barh(
+        names,
+        [s.in_bursts for s in ch],
+        color="#000000",
+        label="In chatter bursts",
+    )
+    ax.barh(
+        names,
+        [s.activations - s.in_bursts for s in ch],
+        left=[s.in_bursts for s in ch],
+        color="#bfbfbf",
+        edgecolor="#000000",
+        lw=0.4,
+        label="Outside bursts",
+    )
+    ax.set_xlabel("Annunciated activations, six months")
+    ax.set_title(title)
+    ax.legend(frameon=False, loc="lower right")
     return _save(fig, path)

@@ -45,3 +45,12 @@ def test_stale_and_standing(builder):
     assert len(days[0].standing) == 1
     s = stale_summary(days)
     assert s["max_stale"] == 1 and s["longest"][0][1] > 2
+
+
+def test_run_lengths(builder):
+    from almetrics.nuisance import run_lengths
+
+    for i, s in enumerate((0, 5, 12, 3600)):
+        builder.cycle(f"r{i}", SRC, s, s + 1)
+    pj = parse_journal(builder.events())
+    assert run_lengths(pj.episodes, SRC) == [5.0, 7.0, 3588.0]
