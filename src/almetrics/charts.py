@@ -193,6 +193,7 @@ def ten_minute_histogram(
 
 
 def pareto(actors, path, title="Top ten alarms by count") -> Path:
+    """Bars: each bad actor's share. Line: cumulative share."""
     style()
     fig, ax = plt.subplots(figsize=SIZE)
     names = [f"{a.rank}" for a in actors]
@@ -954,3 +955,116 @@ def stale_gantt(
         fontsize=6.5,
     )
     return _save(fig, path)
+
+
+def what_if_chart(
+    rows: list[dict], path, title: str = "If the top alarms were fixed"
+) -> Path:
+    """Alarms per day and time in flood as bad actors are removed."""
+    style()
+    fig, ax = plt.subplots(figsize=SIZE)
+    xs = [r["removed"] for r in rows]
+    ax.bar(
+        xs,
+        [r["per_day"] for r in rows],
+        color="#7f7f7f",
+        edgecolor="#000000",
+        lw=0.4,
+        label="Alarms per day",
+    )
+    ax.set_xlabel("Top bad actors fixed")
+    ax.set_ylabel("Annunciated alarms per day")
+    ax.set_xticks(xs)
+    ax2 = ax.twinx()
+    ax2.plot(
+        xs,
+        [r["pct_time_in_flood"] for r in rows],
+        color="#000000",
+        marker="o",
+        ms=3,
+        label="Time in flood, %",
+    )
+    ax2.set_ylabel("Time in flood, %")
+    ax2.spines["right"].set_visible(True)
+    ax2.set_ylim(0, None)
+    h1, l1 = ax.get_legend_handles_labels()
+    h2, l2 = ax2.get_legend_handles_labels()
+    ax.legend(h1 + h2, l1 + l2, frameon=False, loc="upper right")
+    ax.set_title(title)
+    return _save(fig, path)
+
+
+# listing: chart_actor_card
+def actor_card(pj: ParsedJournal, actor, path) -> Path:
+    """One page per bad actor: daily count, time active, and the facts."""
+    from .metrics import daily_counts
+    from .nuisance import run_lengths
+
+    style()
+    eps = [e for e in pj.annunciated() if e.source == actor.source]
+    days = int(round(pj.days))
+    day0 = datetime(pj.start.year, pj.start.month, pj.start.day)
+    fig = plt.figure(figsize=SIZE)
+    gs = fig.add_gridspec(3, 2, height_ratios=[1.1, 1, 0.9])
+    a1 = fig.add_subplot(gs[0, :])
+    a1.bar(
+        [day0 + timedelta(days=i) for i in range(days)],
+        daily_counts([e.active for e in eps], pj.start, days),
+        width=1.0,
+        color="#7f7f7f",
+    )
+    a1.set_ylabel("Per day")
+    a1.xaxis.set_major_locator(mdates.MonthLocator())
+    a1.xaxis.set_major_formatter(mdates.DateFormatter("%b"))
+    a1.set_title(f"#{actor.rank}  {actor.displaypath}", fontsize=8)
+    edges = [0, 5, 60, 600, 3600, 1e12]
+    labels = ["<5 s", "5-60 s", "1-10 m", "10-60 m", ">1 h"]
+    for ax, vals, name in (
+        (
+            fig.add_subplot(gs[1, 0]),
+            [e.duration(pj.end) for e in eps if e.clear],
+            "Time active",
+        ),
+        (
+            fig.add_subplot(gs[1, 1]),
+            run_lengths(eps, actor.source),
+            "Time between",
+        ),
+    ):
+        n = len(vals) or 1
+        ax.bar(
+            labels,
+            [
+                100 * sum(1 for v in vals if edges[i] <= v < edges[i + 1]) / n
+                for i in range(5)
+            ],
+            color="#000000",
+        )
+        ax.set_title(name, fontsize=7)
+        ax.tick_params(axis="x", labelsize=5.5, rotation=30)
+        ax.set_ylim(0, 100)
+    a3 = fig.add_subplot(gs[2, :])
+    a3.axis("off")
+    facts = [
+        f"Console {actor.console}   Priority {actor.priority}   "
+        f"{actor.count:,} alarms, {actor.per_day:.0f} a day, "
+        f"{actor.pct:.1f}% of all",
+        f"Chattering: {'yes' if actor.chattering else 'no'}   "
+        f"Fleeting activations: {actor.fleeting:,}",
+        f"Median active {actor.median_active_s or 0:.0f} s   "
+        f"Median to ack {actor.median_ack_s or 0:.0f} s",
+        f"First guess: {actor.diagnosis}",
+    ]
+    for i, t in enumerate(facts):
+        a3.text(
+            0,
+            0.85 - i * 0.27,
+            t,
+            fontsize=7,
+            transform=a3.transAxes,
+            fontweight="bold" if i == 3 else "normal",
+        )
+    return _save(fig, path)
+
+
+# end listing

@@ -15,7 +15,7 @@ def test_bad_actors_ranked(pair):  # noqa: F811
     assert [a.count for a in acts] == sorted(
         (a.count for a in acts), reverse=True
     )
-    assert acts[0].diagnosis.startswith("chattering")
+    assert acts[0].diagnosis.startswith("chatter")
     assert abs(acts[-1].cum_pct - sum(a.pct for a in acts)) < 1e-9
 
 
@@ -42,3 +42,15 @@ def test_shelving_and_compare(pair):  # noqa: F811
     rows = {r["metric"]: r for r in compare(before, after)}
     assert rows["Chattering alarms"]["after"] == 0
     assert rows["Annunciated per day"]["change_pct"] < -50
+
+
+def test_what_if_and_cards(pair, tmp_path):  # noqa: F811
+    from almetrics.badactors import bad_actors, what_if
+    from almetrics.charts import actor_card
+
+    before, _, _ = pair
+    rows = what_if(before, top=5)
+    assert [r["removed"] for r in rows] == [0, 1, 2, 3, 4, 5]
+    assert rows[-1]["per_day"] < rows[0]["per_day"] / 2
+    a = bad_actors(before, top=1)[0]
+    assert actor_card(before, a, tmp_path / "card.png").exists()

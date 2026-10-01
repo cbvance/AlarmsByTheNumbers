@@ -96,6 +96,7 @@ def bad_actors(
 # end listing
 
 
+# listing: diagnose
 def diagnose(
     chatter_share: float, fleeting: int, count: int, med_active: float | None
 ) -> str:
@@ -106,9 +107,47 @@ def diagnose(
     chattering count, but it is not diagnosed as a chatterer.
     """
     if chatter_share >= 0.5:
-        return "chattering: deadband and delay"
+        return "chatter: deadband+delay"
     if fleeting and fleeting >= count / 2:
-        return "fleeting: on-delay or filter"
+        return "fleeting: on-delay"
     if med_active is not None and med_active > 86400:
-        return "standing: state-based or remove"
-    return "frequent: review setpoint and consequence"
+        return "standing: state/remove"
+    return "frequent: setpoint"
+
+
+# end listing
+
+
+# listing: what_if
+def without(pj: ParsedJournal, sources: set[str]) -> ParsedJournal:
+    """The same journal with some alarms' episodes taken out: what the
+    metrics would be if those alarms had been fixed."""
+    from dataclasses import replace
+
+    return replace(
+        pj, episodes=[e for e in pj.episodes if e.source not in sources]
+    )
+
+
+def what_if(
+    pj: ParsedJournal, top: int = 10, console: str | None = None
+) -> list[dict]:
+    """Headline metrics after removing the top 0, 1, ... top bad actors."""
+    from .metrics import console_metrics
+
+    ranked = [a.source for a in bad_actors(pj, top, console)]
+    rows = []
+    for k in range(len(ranked) + 1):
+        m = console_metrics(without(pj, set(ranked[:k])), console)
+        rows.append(
+            {
+                "removed": k,
+                "per_day": m["per_day"],
+                "max_10min": m["max_10min"],
+                "pct_time_in_flood": m["pct_time_in_flood"],
+            }
+        )
+    return rows
+
+
+# end listing

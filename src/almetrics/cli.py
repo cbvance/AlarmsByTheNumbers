@@ -55,7 +55,10 @@ def _load(args):
 def _table(rows: list[list], header: list[str]) -> str:
     cols = list(zip(header, *rows)) if rows else [(h,) for h in header]
     widths = [max(len(str(v)) for v in col) for col in cols]
-    line = lambda r: "  ".join(str(v).ljust(w) for v, w in zip(r, widths))
+
+    def line(r):
+        return "  ".join(str(v).ljust(w) for v, w in zip(r, widths)).rstrip()
+
     return "\n".join(
         [line(header), line(["-" * w for w in widths])]
         + [line(r) for r in rows]
@@ -89,14 +92,18 @@ def cmd_generate(args):
 def cmd_parse(args):
     pj, _ = _load(args)
     ann = pj.annunciated()
+    print(f"{args.journal}")
     print(
-        f"{args.journal}: {pj.start:%Y-%m-%d %H:%M} to {pj.end:%Y-%m-%d %H:%M} "
-        f"({pj.days:.1f} days)"
+        f"  {pj.start:%Y-%m-%d %H:%M} to {pj.end:%Y-%m-%d %H:%M}"
+        f" ({pj.days:.1f} days)"
     )
     print(
-        f"episodes {len(pj.episodes):,}  annunciated {len(ann):,}  "
-        f"shelved {sum(e.shelved for e in pj.episodes):,}  orphans {pj.orphans}  "
-        f"toggles {len(pj.toggles)}  system rows {len(pj.system)}"
+        f"  episodes {len(pj.episodes):,}  annunciated {len(ann):,}"
+        f"  shelved {sum(e.shelved for e in pj.episodes):,}"
+    )
+    print(
+        f"  orphans {pj.orphans}  toggles {len(pj.toggles)}"
+        f"  system rows {len(pj.system)}"
     )
 
 
@@ -262,16 +269,17 @@ def cmd_stale(args):
     for c in pj.consoles():
         s = stale_summary(stale_by_day(pj, c, args.hours))
         print(
-            f"\nConsole {c}: most stale on a day {s['max_stale']}, mean {s['mean_stale']:.1f}, "
-            f"days with 5 or more {s['days_over_5']} of {s['days']}, "
-            f"mean standing {s['mean_standing']:.1f}"
+            f"\nConsole {c}: most stale on a day {s['max_stale']},"
+            f" mean {s['mean_stale']:.1f}"
+        )
+        print(
+            f"  days with 5 or more {s['days_over_5']} of {s['days']},"
+            f" mean standing {s['mean_standing']:.1f}"
         )
         for name, age in s["longest"][:10]:
             print(f"  {age:6.1f} days  {name}")
-    print(
-        f"\nNote: alarms already active before {pj.start:%Y-%m-%d} are invisible; "
-        f"the first {args.hours:.0f} h undercount."
-    )
+    print(f"\nNote: alarms active before {pj.start:%Y-%m-%d} are invisible;")
+    print(f"the first {args.hours:.0f} h undercount.")
 
 
 def cmd_badactors(args):
@@ -283,11 +291,10 @@ def cmd_badactors(args):
         [
             a.rank,
             a.console,
-            a.displaypath[:36],
-            a.priority,
+            a.displaypath[:25],
+            {"Medium": "Med", "Critical": "Crit"}.get(a.priority, a.priority),
             f"{a.count:,}",
             f"{a.pct:.1f}",
-            f"{a.cum_pct:.1f}",
             a.diagnosis,
         ]
         for a in acts
@@ -299,10 +306,9 @@ def cmd_badactors(args):
                 "#",
                 "Con",
                 "Alarm",
-                "Priority",
+                "Pri",
                 "Count",
                 "%",
-                "Cum %",
                 "First guess",
             ],
         )
@@ -311,6 +317,30 @@ def cmd_badactors(args):
         from .charts import pareto
 
         print(f"chart: {pareto(acts, args.chart)}")
+    if args.cards:
+        from .charts import actor_card
+
+        for a in acts:
+            p = actor_card(pj, a, Path(args.cards) / f"actor_{a.rank:02d}.png")
+            print(f"card: {p}")
+    if args.what_if:
+        from .badactors import what_if
+
+        print("\nIf the top alarms were fixed:")
+        print(
+            _table(
+                [
+                    [
+                        r["removed"],
+                        f"{r['per_day']:.0f}",
+                        r["max_10min"],
+                        f"{r['pct_time_in_flood']:.1f}",
+                    ]
+                    for r in what_if(pj, args.top, args.console)
+                ],
+                ["Fixed", "Per day", "Peak 10m", "%Flood"],
+            )
+        )
 
 
 def cmd_shelving(args):
@@ -480,7 +510,14 @@ def cmd_build(args):
         (
             "badactors",
             cmd_badactors,
-            NS(**j, top=10, console=None, chart=out / "pareto.png"),
+            NS(
+                **j,
+                top=10,
+                console=None,
+                chart=out / "pareto.png",
+                cards=out / "cards",
+                what_if=True,
+            ),
         ),
         ("shelving", cmd_shelving, NS(**j)),
         ("madb", cmd_madb, NS(**j, out=out / "madb.xlsx")),
@@ -598,6 +635,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--top", type=int, default=10)
     p.add_argument("--console")
     p.add_argument("--chart", type=Path)
+    p.add_argument("--cards", type=Path, help="folder for one card per alarm")
+    p.add_argument(
+        "--what-if",
+        action="store_true",
+        help="metrics as the top alarms are removed",
+    )
     journal_cmd("shelving", cmd_shelving, "shelving and suppression analysis")
     p = journal_cmd("madb", cmd_madb, "export the MADB workbook")
     p.add_argument("--out", type=Path, default=Path("out/madb.xlsx"))
